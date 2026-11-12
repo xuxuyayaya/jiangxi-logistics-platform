@@ -96,28 +96,8 @@ def route_rail(a,b):
  except Exception:return {'state':'request_failed','message':'铁路轨道服务查询失败或超时。'}
 
 def route_sea(a,b):
- """Searoutes real sea-lane service; requires an account API key configured server-side."""
- key=os.getenv('SEAROUTES_API_KEY','')
- if not key:return {'state':'key_required','message':'水运实线路需要配置 SEAROUTES_API_KEY（Searoutes服务）；未接入前仅展示港口节点，不绘制示意线。'}
- ck=(tuple(a),tuple(b));hit=SEA_CACHE.get(ck)
- if hit and time.time()-hit[0]<3600:return hit[1]
- url='https://api.searoutes.com/route/v2/sea/'+','.join(map(str,a))+';'+','.join(map(str,b))+'?continuousCoordinates=false'
- try:
-  req=urllib.request.Request(url,headers={'x-api-key':key,'Accept':'application/json','User-Agent':'JiangxiLogisticsDemo/1.0'})
-  with urllib.request.urlopen(req,timeout=20) as res:data=json.load(res)
-  geom=data.get('geometry') or (data.get('features') or [{}])[0].get('geometry') or {}
-  props=data.get('properties') or (data.get('features') or [{}])[0].get('properties') or {}
-  coords=geom.get('coordinates') or []
-  if len(coords)<2:return {'state':'no_route','message':'港航服务未返回有效海上航线。'}
-  dist=props.get('length') or props.get('distance')
-  if isinstance(dist,dict):dist=dist.get('value')
-  duration=props.get('duration')
-  if isinstance(duration,dict):duration=duration.get('value')
-  result={'state':'ready','geometry':coords,'distanceKm':round(float(dist)/1000,2) if dist else None,'durationHours':round(float(duration)/3600000,2) if duration else None,'source':'Searoutes 海上航线规划','coordinateSystem':'WGS84','queriedAt':time.strftime('%Y-%m-%d %H:%M:%S'),'message':'海上航线规划参考，不代表船舶实时轨迹、船期、舱位或通航许可。'}
-  SEA_CACHE[ck]=(time.time(),result);return result
- except urllib.error.HTTPError as e:
-  return {'state':'provider_error','message':'水运服务查询失败（HTTP '+str(e.code)+'）；请核验Searoutes账号、额度及服务范围。'}
- except Exception:return {'state':'request_failed','message':'水运航线服务查询失败或超时。'}
+ """Ocean routing is intentionally deferred; maps may draw a labelled port-to-port sketch."""
+ return {'state':'schematic','geometry':[],'distanceKm':None,'durationHours':None,'source':'港口间水运示意','coordinateSystem':'WGS84','queriedAt':time.strftime('%Y-%m-%d %H:%M:%S'),'message':'暂未接入海运航线服务。路线图仅在两个港口均已定位时绘制水上虚线曲线示意，不代表实际航道、航程、船期或时效。'}
 def apply_real_routes(r):
  import concurrent.futures
  # Local hubs have verified coordinates. Resolve free-text endpoints rather than
@@ -142,5 +122,5 @@ def apply_real_routes(r):
    s.update(routeQuery=q,geometry=q.get('geometry',[]),distanceKm=q.get('distanceKm'),durationHours=q.get('durationHours'),coordinateSystem=q.get('coordinateSystem','GCJ02'))
    s['geometryWgs84']=[gcj02_to_wgs84(p) for p in s['geometry']] if s['coordinateSystem']=='GCJ02' else s['geometry']
  r['track']=[];r['position']=None;r['coordinateSystem']='WGS84';r['realRoadRouteCount']=sum(s['routeQuery']['state']=='ready' and s['mode']=='公路' for s in r['segments']);r['realRailRouteCount']=sum(s['routeQuery']['state']=='ready' and s['mode']=='铁路' for s in r['segments']);r['realWaterRouteCount']=sum(s['routeQuery']['state']=='ready' and s['mode']=='水运' for s in r['segments']);r['routeReady']=all(s['routeQuery']['state']=='ready' for s in r['segments']);r['totalDistanceKm']=round(sum(s['distanceKm'] or 0 for s in r['segments']),2) if r['routeReady'] else None;r['estimatedDurationHours']=round(sum(s['durationHours'] or 0 for s in r['segments']),2) if r['routeReady'] else None
- r['notice']='道路分段只显示高德返回的真实路网规划线；无Key、查询失败、铁路或水运线路未接入时不绘制替代连线。订单及货量、费用、载具、进度仍为模拟；道路规划不是GPS实测轨迹。'
+ r['notice']='道路仅显示高德返回的真实路网规划线；铁路显示轨道数据参考。海运服务暂不接入，港口间仅绘制已定位两端的水上虚线示意，不代表实际航道或航程。订单及货量、费用、载具、进度仍为模拟；规划线不是GPS实测轨迹。'
  return r

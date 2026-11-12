@@ -116,7 +116,7 @@ def visible(u,r):return u['role']=='admin' or r['owner'] in (u['company'],'publi
 def record(r):return {'id':r['id'],'kind':r['kind'],'version':r['version'],**json.loads(r['data'])}
 KINDS={'demands','resources','waybills','policies','alerts','interfaces','tickets'}
 @app.get('/health')
-def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.6.1','routeDetails':True,'realRoadRouting':True,'realRailTrackRouting':True,'seaRoutingConfigured':bool(os.getenv('SEAROUTES_API_KEY'))}
+def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.7.0','routeDetails':True,'realRoadRouting':True,'realRailTrackRouting':True,'seaRoutingConfigured':False,'seaRoutingMode':'port_sketch_only'}
 @app.post('/api/login')
 async def login(req:Request):
  ip=req.client.host if req.client else 'unknown';attempts=LOGIN_ATTEMPTS.setdefault(ip,[]);attempts[:]=[t for t in attempts if time.time()-t<60]
@@ -137,7 +137,7 @@ def me(req:Request):
  u=user(req);return {k:u[k] for k in ['name','role','company']}
 @app.get('/api/config')
 def config(req:Request):
- user(req);return {'amapKey':os.getenv('AMAP_WEB_KEY',''),'amapSecurityCode':os.getenv('AMAP_SECURITY_CODE',''),'amapRoadConfigured':bool(os.getenv('AMAP_WEB_SERVICE_KEY')),'railRoutingConfigured':True,'waterRoutingConfigured':bool(os.getenv('SEAROUTES_API_KEY')),'simulation':True,'persistentStorage':bool(os.getenv('DATA_DIR'))}
+ user(req);return {'amapKey':os.getenv('AMAP_WEB_KEY',''),'amapSecurityCode':os.getenv('AMAP_SECURITY_CODE',''),'amapRoadConfigured':bool(os.getenv('AMAP_WEB_SERVICE_KEY')),'railRoutingConfigured':True,'waterRoutingConfigured':False,'simulation':True,'persistentStorage':bool(os.getenv('DATA_DIR'))}
 @app.get('/api/modules')
 def modules(req:Request):
  user(req);return json.loads((BASE/'modules.json').read_text())
@@ -208,33 +208,51 @@ async def quote(req:Request):
 @app.post('/api/plans')
 async def plans(req:Request):
  user(req);x=await req.json()
- if not x.get('origin') or not x.get('destination') or x['origin']==x['destination']:raise HTTPException(422,'请选择不同的起讫枢纽')
+ if not x.get('origin') or not x.get('destination') or str(x['origin']).strip()==str(x['destination']).strip():raise HTTPException(422,'请选择不同的起讫地点')
  try:w=float(x.get('weight',100))
  except (ValueError,TypeError):raise HTTPException(422,'重量格式错误')
  if not math.isfinite(w) or w<=0:raise HTTPException(422,'重量必须大于零')
+ if x.get('budget') not in (None,''):
+  try:budget=float(x['budget'])
+  except (ValueError,TypeError):raise HTTPException(422,'预算格式错误')
+  if not math.isfinite(budget) or budget<0:raise HTTPException(422,'预算不能为负数')
  from route_service import build_route,parse_user_point
  from real_routes import apply_real_routes
- legs=x.get('legs') or [{'from':x['origin'],'to':x['destination'],'mode':'公路'}]
- if not isinstance(legs,list) or not 1<=len(legs)<=8:raise HTTPException(422,'请填写1至8个连续运输段')
- for i,leg in enumerate(legs):
-  if not isinstance(leg,dict) or leg.get('mode') not in ('公路','铁路','水运'):raise HTTPException(422,'运输方式请选择公路、铁路或水运')
-  if not str(leg.get('from','')).strip() or not str(leg.get('to','')).strip():raise HTTPException(422,'每段起讫节点不能为空')
-  if leg['from']==leg['to']:raise HTTPException(422,'同一运输段的起讫节点不能相同')
-  if i and legs[i-1]['to']!=leg['from']:raise HTTPException(422,'运输段必须连续，上一段终点须与下一段起点一致')
+ legs=x.get('legs') or []
+ if not isinstance(legs,list) or len(legs)>8:raise HTTPException(422,'最多可配置8个连续运输段')
+ if legs:
+  if not legs:raise HTTPException(422,'请添加运输段')
+  for i,leg in enumerate(legs):
+   if not isinstance(leg,dict) or leg.get('mode') not in ('公路','铁路','水运'):raise HTTPException(422,'运输方式请选择公路、铁路或水运')
+   if not str(leg.get('from','')).strip() or not str(leg.get('to','')).strip():raise HTTPException(422,'每段起讫节点不能为空')
+   if str(leg['from']).strip()==str(leg['to']).strip():raise HTTPException(422,'同一运输段的起讫节点不能相同')
+   if i and str(legs[i-1]['to']).strip()!=str(leg['from']).strip():raise HTTPException(422,'运输段必须连续，上一段终点须与下一段起点一致')
+  clean_location=lambda v:re.sub(r'\s*\[[^]]+\]','',str(v)).strip()
+  if clean_location(legs[0]['from'])!=clean_location(x['origin']) or clean_location(legs[-1]['to'])!=clean_location(x['destination']):raise HTTPException(422,'首段起点和末段终点须与上方起讫地点一致')
+  mode_sets=[legs]
+ else:
+  requested=x.get('modes') or ['公路']
+  if not isinstance(requested,list) or not requested or any(m not in ('公路','铁路','水运') for m in requested):raise HTTPException(422,'请至少选择公路、铁路或水运，可同时比较多种方式')
+  if len(set(requested))!=len(requested):raise HTTPException(422,'运输方式不能重复')
+  mode_sets=[[{'from':str(x['origin']).strip(),'to':str(x['destination']).strip(),'mode':m}] for m in requested]
  def endpoint(value):
-  coord=parse_user_point(value);name=re.sub(r'\s*\[[^]]+\]','',value).strip();return name,coord
- origin,oc=endpoint(legs[0]['from']);destination,dc=endpoint(legs[-1]['to'])
+  value=str(value).strip();coord=parse_user_point(value);name=re.sub(r'\s*\[[^]]+\]','',value).strip();return name,coord
  if x.get('plannedDeparture') and x.get('requiredArrival') and x['plannedDeparture']>x['requiredArrival']:raise HTTPException(422,'要求到达日期不能早于计划发运日期')
- order={'id':'QUERY-PLAN','origin':origin,'destination':destination,'weight':w,'mode':'多式联运' if len(legs)>1 else legs[0]['mode'],'routeModes':','.join(l['mode'] for l in legs),'routeNodes':';'.join(l['to'] for l in legs[:-1]),'title':'联运链路查询','created':now()}
- order.update({k:x.get(k) for k in ('loadType','plannedDeparture','requiredArrival') if x.get(k)})
- if oc:order['originCoords']=oc
- if dc:order['destinationCoords']=dc
- route=apply_real_routes(build_route(order,'demands'));route['name']='指定联运链路' if len(legs)>1 else '指定运输路线'
- routes=[route]
- if x.get('compareRoad') and (len(legs)>1 or legs[0]['mode']!='公路'):
-  road={**order,'id':'QUERY-ROAD','routeNodes':'','routeModes':'公路','mode':'公路运输'}
-  base=apply_real_routes(build_route(road,'demands'));base['name']='公路直达基准';routes.append(base)
- return {'plans':routes,'orderTemplate':{k:v for k,v in order.items() if k not in ('id','created')},'notice':'路径几何为线路服务规划结果。承运班次、运价、舱位、货车限制和实际轨迹须分别核实；未返回线路的运输段单独显示原因。'}
+ routes=[]
+ for ix,route_legs in enumerate(mode_sets):
+  origin,oc=endpoint(route_legs[0]['from']);destination,dc=endpoint(route_legs[-1]['to'])
+  multi=len(route_legs)>1;first_mode=route_legs[0]['mode']
+  order={'id':f'QUERY-PLAN-{ix+1}','origin':origin,'destination':destination,'weight':w,'cargo':str(x.get('cargo',''))[:200],'mode':'多式联运' if multi else first_mode+'运输','routeModes':','.join(l['mode'] for l in route_legs),'routeNodes':';'.join(l['to'] for l in route_legs[:-1]),'title':'联运链路查询','created':now()}
+  order.update({k:x.get(k) for k in ('loadType','plannedDeparture','requiredArrival','budget','requirements') if x.get(k) not in (None,'')})
+  if oc:order['originCoords']=oc
+  if dc:order['destinationCoords']=dc
+  route=apply_real_routes(build_route(order,'demands'))
+  route['name']=('指定联运链路' if multi else first_mode+'路线查询') if legs else first_mode+'路线查询'
+  routes.append(route)
+ if x.get('compareRoad') and legs and (len(legs)>1 or legs[0]['mode']!='公路'):
+  order={**routes[0]['order'],'id':'QUERY-ROAD','routeNodes':'','routeModes':'公路','mode':'公路运输'}
+  base=apply_real_routes(build_route(order,'demands'));base['name']='全程公路参照';routes.append(base)
+ return {'plans':routes,'orderTemplate':{k:v for k,v in routes[0]['order'].items() if k not in ('id','created')},'notice':'路线按已选运输方式和实际起讫地点分别查询；已配置的联运按填写的分段顺序查询，不自动推断换装节点。承运班次、运价、舱位、货运受理和通行条件须由承运方确认。'}
 
 @app.get('/api/export/{kind}')
 def export(kind:str,req:Request):
