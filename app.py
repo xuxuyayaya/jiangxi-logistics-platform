@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 BASE=Path(__file__).parent
 LOGIN_ATTEMPTS={}
 DB=Path(os.getenv('DATA_DIR',str(BASE/'data')))/'platform.sqlite';DB.parent.mkdir(parents=True,exist_ok=True)
-app=FastAPI(title='江西物流一张网',version='1.0.0')
+app=FastAPI(title='江西物流一张网',version='1.1.0')
 def db():
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row;return c
 def now():return datetime.now().isoformat(timespec='seconds')
@@ -50,7 +50,7 @@ def visible(u,r):return u['role']=='admin' or r['owner'] in (u['company'],'publi
 def record(r):return {'id':r['id'],'kind':r['kind'],'version':r['version'],**json.loads(r['data'])}
 KINDS={'demands','resources','waybills','policies','alerts','interfaces','tickets'}
 @app.get('/health')
-def health():return {'status':'ok','database':'sqlite','mode':'simulation'}
+def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.1.0','routeDetails':True}
 @app.post('/api/login')
 async def login(req:Request):
  ip=req.client.host if req.client else 'unknown';attempts=LOGIN_ATTEMPTS.setdefault(ip,[]);attempts[:]=[t for t in attempts if time.time()-t<60]
@@ -161,3 +161,6 @@ def audits(req:Request):
 app.mount('/static',StaticFiles(directory=BASE/'static'),name='static')
 @app.get('/')
 def home():return FileResponse(BASE/'static/index.html')
+
+from route_service import register_routes
+register_routes(app,db,user,visible,record)
