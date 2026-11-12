@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 BASE=Path(__file__).parent
 LOGIN_ATTEMPTS={}
 DB=Path(os.getenv('DATA_DIR',str(BASE/'data')))/'platform.sqlite';DB.parent.mkdir(parents=True,exist_ok=True)
-app=FastAPI(title='江西物流一张网',version='1.1.0')
+app=FastAPI(title='江西物流一张网',version='1.2.0')
 def db():
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row;return c
 def now():return datetime.now().isoformat(timespec='seconds')
@@ -50,7 +50,7 @@ def visible(u,r):return u['role']=='admin' or r['owner'] in (u['company'],'publi
 def record(r):return {'id':r['id'],'kind':r['kind'],'version':r['version'],**json.loads(r['data'])}
 KINDS={'demands','resources','waybills','policies','alerts','interfaces','tickets'}
 @app.get('/health')
-def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.1.0','routeDetails':True}
+def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.2.0','routeDetails':True,'realRoadRouting':True}
 @app.post('/api/login')
 async def login(req:Request):
  ip=req.client.host if req.client else 'unknown';attempts=LOGIN_ATTEMPTS.setdefault(ip,[]);attempts[:]=[t for t in attempts if time.time()-t<60]
@@ -71,7 +71,7 @@ def me(req:Request):
  u=user(req);return {k:u[k] for k in ['name','role','company']}
 @app.get('/api/config')
 def config(req:Request):
- user(req);return {'amapKey':os.getenv('AMAP_WEB_KEY',''),'amapSecurityCode':os.getenv('AMAP_SECURITY_CODE',''),'simulation':True,'persistentStorage':bool(os.getenv('DATA_DIR'))}
+ user(req);return {'amapKey':os.getenv('AMAP_WEB_KEY',''),'amapSecurityCode':os.getenv('AMAP_SECURITY_CODE',''),'amapRoadConfigured':bool(os.getenv('AMAP_WEB_SERVICE_KEY')),'simulation':True,'persistentStorage':bool(os.getenv('DATA_DIR'))}
 @app.get('/api/modules')
 def modules(req:Request):
  user(req);return json.loads((BASE/'modules.json').read_text())
@@ -164,3 +164,21 @@ def home():return FileResponse(BASE/'static/index.html')
 
 from route_service import register_routes
 register_routes(app,db,user,visible,record)
+
+@app.get('/api/matching/{rid}')
+def matching(rid:str,req:Request):
+ u=user(req)
+ with db() as c:
+  row=c.execute('select * from records where kind="demands" and id=?',(rid,)).fetchone()
+  if not row or not visible(u,row):raise HTTPException(404,'需求不存在或无权访问')
+  demand=record(row);resources=[record(r) for r in c.execute('select * from records where kind="resources"') if visible(u,r)]
+ weight=float(demand.get('weight',0) or 0);result=[]
+ for r in resources:
+  reasons=[];is_transport=r.get('mode')=='车船运力';capacity=float(r.get('available',0) or 0);cold='冷' in demand.get('cargo','') or '冷' in demand.get('description','')
+  eligible=is_transport and r.get('status')=='已认证' and capacity>=weight and not cold
+  reasons.append('可用运力'+str(capacity)+'吨' if is_transport else '仓储供给，不能直接替代运输运力')
+  if cold:reasons.append('缺少已核验冷链运输能力，不能确认满足温控要求')
+  same=r.get('origin')==demand.get('origin');score=(60+20*same+10*(capacity>=weight)+10*(demand.get('mode')=='公路运输')) if eligible else 0
+  result.append({**r,'capacityUnit':'吨' if is_transport else '㎡','eligible':eligible,'matchScore':score,'scope':'可匹配公路段；其他运输段需另行确认' if eligible else '不满足当前运输需求硬约束','reasons':reasons,'locationMatch':same,'referenceUnitPrice':r.get('price'),'priceBasis':'模拟供方报价参数，计费单位和费用范围待确认；不直接计算成交价'})
+ result.sort(key=lambda r:(r['eligible'],r['matchScore']),reverse=True)
+ return {'demand':demand,'supplies':result,'eligibleCount':sum(r['eligible'] for r in result),'supplyCount':len(result),'weightTons':weight,'simulation':True,'criteria':'运输资源类型、已认证状态、可用吨位、温控硬约束；评分=基础60+同起运节点20+容量满足10+纯公路需求10；评分仅对硬约束通过者计算。'}

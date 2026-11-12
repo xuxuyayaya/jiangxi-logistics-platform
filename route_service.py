@@ -63,4 +63,5 @@ def register_routes(app,db,user,visible,record):
   u=user(req)
   with db() as c:r=c.execute('select * from records where kind=? and id=?',(kind,rid)).fetchone()
   if not r or not visible(u,r):raise HTTPException(404,'订单不存在或无权访问')
-  return build_route(record(r),kind)
+  from real_routes import apply_real_routes
+  return apply_real_routes(build_route(record(r),kind))
