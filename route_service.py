@@ -14,6 +14,15 @@ def point(name):
   if name and name[:2]==k[:2]:return list(v),True
  return [115.927,28.429],False
 
+def parse_user_point(value):
+ """Accept optional WGS84 coordinates in user-entered node fields."""
+ m=re.search(r'\[\s*(-?\d+(?:\.\d+)?)\s*[,，]\s*(-?\d+(?:\.\d+)?)\s*\]',str(value or ''))
+ if not m:return None
+ try:
+  lon,lat=map(float,m.groups())
+  return [lon,lat] if -180<=lon<=180 and -90<=lat<=90 else None
+ except ValueError:return None
+
 def km(a,b):
  lon1,lat1,lon2,lat2=map(math.radians,(*a,*b));dlon=lon2-lon1;dlat=lat2-lat1;return 6371*2*math.asin(min(1,math.sqrt(math.sin(dlat/2)**2+math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2)))
 def build_route(x,kind):
@@ -33,8 +42,18 @@ def build_route(x,kind):
  else:points=[(origin,a)]+[(n,list(NODES[n])) for n in chosen]+[(dest,b)]
  # A user-specified itinerary takes precedence. Nodes are geocoded by the routing
  # provider below; unresolved nodes are never plotted at a default Jiangxi point.
- via=[n.strip() for n in re.split(r'[;,，；]+',str(x.get('routeNodes',''))) if n.strip()]
- if via:points=[(origin,a)]+[(n,point(n)[0]) for n in via]+[(dest,b)]
+ via=[n.strip() for n in re.split(r'[;；\n]+',str(x.get('routeNodes',''))) if n.strip()]
+ manual_indices=set()
+ if via:
+  via_points=[]
+  for n in via:
+   coord=parse_user_point(n);name=re.sub(r'\s*\[\s*-?\d+(?:\.\d+)?\s*[,，]\s*-?\d+(?:\.\d+)?\s*\]','',n).strip()
+   via_points.append((name,coord or point(name)[0]))
+   if coord:manual_indices.add(len(via_points))
+  points=[(origin,a)]+via_points+[(dest,b)]
+ for index,key in ((0,'originCoords'),(len(points)-1,'destinationCoords')):
+  coord=parse_user_point('['+str(x.get(key,''))+']')
+  if coord:points[index]=(points[index][0],coord);manual_indices.add(index)
  isway=kind=='waybills';progress=float(x.get('progress',0)) if isway else 0;progress=max(0,min(100,progress));status=x.get('status','待响应')
  segments=[];track=[];cumulative=0
  started=datetime.fromisoformat(x.get('created',datetime.now().isoformat()))-timedelta(hours=36)
@@ -64,7 +83,7 @@ def build_route(x,kind):
  weight=float(x.get('weight',100) or 100);cost=float(x.get('price',round(total*weight*.42)) or 0);costs=[{'name':n,'amount':round(cost*r,2),'basis':'模拟费用拆分，非结算或开票凭证'} for n,r in [('干线运输费',.68),('短驳接驳费',.18),('装卸与换装费',.09),('综合协同服务费',.05)]]
  alerts=[{'id':'RISK-'+str(seed%10000),'title':'模拟节点滞留核查','level':'中','status':'处理中','node':points[min(cur['segment']+1,len(points)-1)][0],'description':'示例运输异常，请按真实业务和设备证据核验。'}] if isway and status=='异常' else []
  docs=[{'id':f'{x["id"]}-{code}','name':name,'status':'已生成模拟样单' if code=='WB' else '示例占位／待真实文件','type':'模拟单据','generated':code=='WB'} for code,name in [('WB','多式联运电子运单'),('OUT','货物出库交接单'),('CHANGE','换装交接记录'),('RECEIPT','目的站签收回单')]]
- return {'order':x,'kind':kind,'routeId':'ROUTE-'+x['id'],'simulation':True,'coordinateSystem':'WGS84','coordinateVerified':ak and bk,'mode':mode,'progress':progress,'totalDistanceKm':round(total,1),'estimatedDurationHours':round(cumulative,1),'plannedStart':started.isoformat(timespec='minutes'),'plannedArrival':(started+timedelta(hours=cumulative)).isoformat(timespec='minutes'),'points':[{'name':n,'point':pt,'type':'起点' if i==0 else '终点' if i==len(points)-1 else '中转','index':i} for i,(n,pt) in enumerate(points)],'segments':segments,'track':track,'position':cur,'events':events,'costs':costs,'alerts':alerts,'documents':docs,'totals':{'weightTons':weight,'packages':max(1,round(weight*3)),'containerCount':max(1,round(weight/25)),'referenceCost':round(cost,2)},'notice':'订单、节点、线路、坐标采样、车辆、费用和事件均为模拟数据。地图连接线不是经路网计算的真实道路路线；页面不会将其标记为GPS实际轨迹。' }
+ return {'order':x,'kind':kind,'routeId':'ROUTE-'+x['id'],'simulation':True,'coordinateSystem':'WGS84','coordinateVerified':ak and bk,'mode':mode,'progress':progress,'totalDistanceKm':round(total,1),'estimatedDurationHours':round(cumulative,1),'plannedStart':started.isoformat(timespec='minutes'),'plannedArrival':(started+timedelta(hours=cumulative)).isoformat(timespec='minutes'),'points':[{'name':n,'point':pt,'coordSource':'user' if i in manual_indices else 'lookup','type':'起点' if i==0 else '终点' if i==len(points)-1 else '中转','index':i} for i,(n,pt) in enumerate(points)],'segments':segments,'track':track,'position':cur,'events':events,'costs':costs,'alerts':alerts,'documents':docs,'totals':{'weightTons':weight,'packages':max(1,round(weight*3)),'containerCount':max(1,round(weight/25)),'referenceCost':round(cost,2)},'notice':'订单、节点、线路、坐标采样、车辆、费用和事件均为模拟数据。地图只绘制有来源的高德道路几何；未接入铁路、港航线路时仅显示节点，不绘制虚构路线。' }
 
 def register_routes(app,db,user,visible,record):
  @app.get('/api/routes/{kind}/{rid}')

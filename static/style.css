@@ -65,3 +65,28 @@ body[data-role] .sidebar{width:100%;height:72px;bottom:auto;flex-direction:row;b
 @media(max-width:850px){body[data-role] .sidebar{height:100vh;bottom:0;width:232px;flex-direction:column;background:var(--nav)}body[data-role] .sidebar .brand{color:white}body[data-role] .sidebar .nav{display:block;overflow:auto}body[data-role] .sidebar .nav button{display:flex;margin:6px 15px;color:#bdd1db;width:calc(100% - 30px);padding:13px}body[data-role] .sidebar .nav button.active{color:white;background:#138478;border:0}body[data-role] .shell{padding-top:0}.route-title h1{font-size:19px}.route-left{max-height:360px;overflow:auto}.route-workspace{grid-template-columns:1fr}.route-left .leg-list{display:flex;gap:12px;overflow:auto}.route-left .leg-card{min-width:220px}.route-note{margin:4px 0}.route-right{display:block}.route-node-list{margin-top:24px}.route-tabs>nav{gap:20px}.route-map{height:380px}.order-route-banner>div:nth-child(1),.order-route-banner>div:nth-child(3){flex:1}.order-route-banner h2{font-size:15px}.route-between{display:none}.route-right .panelhead:not(:first-child){display:flex}.route-metrics>div{padding:13px}.order-title .actions{flex-wrap:wrap}.overview-fields{grid-template-columns:1fr 1fr}.replay-caption span:nth-child(2){display:none}}
 @media(max-width:480px){.quicktasks{gap:10px}.quicktask{padding:14px 10px}.quicktask>i{font-size:19px;padding:6px}.quicktask b{font-size:11px}.quicktask small{font-size:9px}.quicktask em{display:none}.order-title h1{font-size:18px;line-height:1.8;flex-wrap:wrap}.order-title p{line-height:2}.order-route-banner{padding:20px 15px;gap:20px}.order-route-banner small{font-size:8px}.order-route-banner h2{font-size:13px}.order-route-banner p{font-size:9px;line-height:1.8}.route-metrics strong{font-size:11px}.route-metrics small{font-size:9px}.route-map{height:330px}.replay-buttons>span{width:100%;margin:5px 0}.document-card{padding:14px;gap:10px}.document-card small{word-break:break-all}.order-title .actions button{font-size:11px}.route-crumb{font-size:10px;gap:8px;flex-wrap:wrap}}
 .order-switch{margin-left:auto;font-size:10px;padding:7px 10px;max-width:400px;background:white}@media(max-width:700px){.order-switch{width:100%;max-width:100%;margin:8px 0 0}.route-crumb{flex-wrap:wrap}}
+/* Follow-up: keep every valid point/road segment visible when another waypoint is unresolved. */
+body[data-role] .sidebar .brand b{font-size:18px}
+body[data-role] .sidebar .brand small{font-size:13px;letter-spacing:1.2px;opacity:.8}
+body[data-role] .sidebar .nav button{font-size:17px;padding-left:5px;padding-right:5px}
+body[data-role] .crumb,body[data-role] .topright{font-size:14px}
+.feature-photo svg{display:block;width:100%;height:100%;min-height:205px}
+.route-map-status{position:absolute;left:12px;bottom:12px;z-index:10;max-width:min(540px,calc(100% - 24px));padding:10px 13px;background:#ffffffed;border:1px solid #dce7e8;border-radius:7px;color:#526e78;font-size:13px;line-height:1.65;box-shadow:0 3px 14px #17354712}
+.route-unavailable{height:100%;min-height:360px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:30px;background:linear-gradient(150deg,#f5f8f8,#edf3f4);text-align:center;color:#617b86}
+.route-unavailable-icon{width:54px;height:54px;border-radius:50%;display:grid;place-items:center;background:#e1eeec;color:#40958a;font-size:29px}
+.route-unavailable h3{font-size:21px;color:#355362}.route-unavailable>p{font-size:14px;line-height:1.7;max-width:520px}
+.route-unavailable>div:not(.route-unavailable-icon){width:min(700px,100%);display:grid;gap:8px;text-align:left}
+.route-unavailable>div>span{background:#fff;border:1px solid #e1e9eb;border-radius:6px;padding:10px 13px;font-size:13px;color:#526e78}
+.route-unavailable>div>span b{color:#168e83;margin-right:10px}.route-unavailable>div>span small{display:block;margin-top:5px;color:#8a9aa2;font-size:12px}.route-unavailable-foot{color:#8a9aa2;font-size:12px}
+@media(max-width:850px){body[data-role] .sidebar .nav button{font-size:15px!important}}
+@media(max-width:560px){body[data-role] .sidebar .nav button{font-size:13px!important}.feature-photo svg{min-height:135px}}
+body[data-role] .route-workspace .panelhead h3{font-size:17px}
+body[data-role] #mapSource{font-size:12px;line-height:1.6}
+body[data-role] .leg-head{font-size:13px}
+body[data-role] .leg-stations{font-size:13px}
+body[data-role] .leg-info{font-size:12px}
+body[data-role] .leg-card p{font-size:12px;line-height:1.6}
+body[data-role] .route-tabs>nav button{font-size:14px}
+body[data-role] .current-location small{font-size:11px}
+body[data-role] .current-location h3{font-size:14px}
+body[data-role] .position-dl{font-size:12px}

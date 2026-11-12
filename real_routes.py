@@ -11,10 +11,18 @@ def geocode_place(name):
  hit=GEOCODE_CACHE.get(name)
  if hit and time.time()-hit[0]<86400:return hit[1]
  try:
-  params=urllib.parse.urlencode({'key':key,'address':name,'output':'JSON'})
-  with urllib.request.urlopen('https://restapi.amap.com/v3/geocode/geo?'+params,timeout=8) as res:data=json.load(res)
-  geo=data.get('geocodes',[{}])[0].get('location') if data.get('status')=='1' and data.get('geocodes') else None
-  point=list(map(float,geo.split(','))) if geo else None
+  parts=[x.strip() for x in name.replace('，',',').split(',') if x.strip()]
+  addresses=[name]
+  if len(parts)>1:addresses.insert(0,parts[0])
+  if '洋山' in name:addresses.extend(['洋山深水港','上海洋山港'])
+  city=parts[1] if len(parts)>1 else ('上海市' if '洋山' in name or name=='上海港' else '')
+  point=None
+  for address in dict.fromkeys(addresses):
+   query={'key':key,'address':address,'output':'JSON'}
+   if city:query['city']=city
+   with urllib.request.urlopen('https://restapi.amap.com/v3/geocode/geo?'+urllib.parse.urlencode(query),timeout=8) as res:data=json.load(res)
+   geo=data.get('geocodes',[{}])[0].get('location') if data.get('status')=='1' and data.get('geocodes') else None
+   if geo:point=list(map(float,geo.split(',')));break
   GEOCODE_CACHE[name]=(time.time(),point)
   return point
  except Exception:return None
@@ -49,7 +57,7 @@ def apply_real_routes(r):
  pts=r.get('points',[])
  for idx,p in enumerate(pts):
   name=p.get('name')
-  if not name:continue
+  if not name or p.get('coordSource')=='user':continue
   known=any(name==n for n in ('南昌向塘国际陆港','九江港城西港区','赣州国际陆港','宜春冷链集配中心','上饶铁路物流园','吉安港物流枢纽','南昌铁路物流中心','九江铁路货场','樟树中转枢纽','鹰潭铁路中转场','吉安铁路货场','赣州铁路货场','丰城港换装码头','万载公路中转站','弋阳公路服务节点'))
   if not known:
    resolved=geocode_place(name)

@@ -46,7 +46,7 @@ with db() as c:
  national=[
   ('DMD-GLOBAL-0001','JX-INT-0001','省际 / 全国','赣州铜材铁路干线至武汉','赣州国际陆港','武汉铁路物流中心','铁路运输','铜材',186,'国内铁路货运单证与班列时刻需由承运方确认。','武汉铁路物流中心','铁路'),
   ('DMD-GLOBAL-0002','JX-INT-0002','省际 / 全国','南昌冷链公路至广州白云','南昌向塘国际陆港','广州白云区','公路运输','冷链食品',42,'温控与货车通行安排需承运方确认。','','公路'),
-  ('DMD-GLOBAL-0003','JX-INT-0003','国际 / 跨境','江西铜材出口至新加坡','九江港城西港区','Singapore Port','国际多式联运','铜材',520,'国际水运与口岸节点仅作路线计划示例；海外地名需核验，未接入港航实时数据。','上海港','公路,水路')]
+  ('DMD-GLOBAL-0003','JX-INT-0003','国际 / 跨境','江西铜材出口至新加坡','九江港城西港区','Singapore Port','国际多式联运','铜材',520,'国际水运与口岸节点仅作路线计划示例；海外地名需核验，未接入港航实时数据。','洋山深水港,上海市,中国','公路,水路')]
  for did,wid,scope,title,origin,destination,mode,cargo,weight,description,nodes,modes in national:
   if not c.execute('select 1 from records where id=?',(did,)).fetchone():
    base={'scope':scope,'title':title,'origin':origin,'destination':destination,'cargo':cargo,'weight':weight,'mode':mode,'routeNodes':nodes,'routeModes':modes,'company':'江西铜业物流','status':'待响应','price':0,'created':now(),'deadline':(datetime.now()+timedelta(days=18)).date().isoformat(),'description':description}
@@ -56,7 +56,7 @@ with db() as c:
  for rid in ('DMD-GLOBAL-0003','JX-INT-0003'):
   row=c.execute('select data from records where id=?',(rid,)).fetchone()
   if row:
-   sample=json.loads(row['data']);sample['routeNodes']='上海港';sample['routeModes']='公路,水路'
+   sample=json.loads(row['data']);sample['routeNodes']='洋山深水港,上海市,中国';sample['routeModes']='公路,水路'
    c.execute('update records set data=? where id=?',(json.dumps(sample,ensure_ascii=False),rid))
 def user(req):
  token=req.cookies.get('jx_session','')
