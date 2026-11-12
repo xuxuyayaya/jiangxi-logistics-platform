@@ -175,8 +175,9 @@ def matching(rid:str,req:Request):
  weight=float(demand.get('weight',0) or 0);result=[]
  for r in resources:
   reasons=[];is_transport=r.get('mode')=='车船运力';capacity=float(r.get('available',0) or 0);cold='冷' in demand.get('cargo','') or '冷' in demand.get('description','')
-  eligible=is_transport and r.get('status')=='已认证' and capacity>=weight and not cold
+  eligible=is_transport and r.get('status')=='已认证' and capacity>=weight and not cold and demand.get('status')!='已关闭'
   reasons.append('可用运力'+str(capacity)+'吨' if is_transport else '仓储供给，不能直接替代运输运力')
+  if demand.get('status')=='已关闭':reasons.append('需求已关闭，不再产生可承接推荐')
   if cold:reasons.append('缺少已核验冷链运输能力，不能确认满足温控要求')
   same=r.get('origin')==demand.get('origin');score=(60+20*same+10*(capacity>=weight)+10*(demand.get('mode')=='公路运输')) if eligible else 0
   result.append({**r,'capacityUnit':'吨' if is_transport else '㎡','eligible':eligible,'matchScore':score,'scope':'可匹配公路段；其他运输段需另行确认' if eligible else '不满足当前运输需求硬约束','reasons':reasons,'locationMatch':same,'referenceUnitPrice':r.get('price'),'priceBasis':'模拟供方报价参数，计费单位和费用范围待确认；不直接计算成交价'})
