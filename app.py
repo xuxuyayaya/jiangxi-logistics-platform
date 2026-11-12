@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 BASE=Path(__file__).parent
 LOGIN_ATTEMPTS={}
 DB=Path(os.getenv('DATA_DIR',str(BASE/'data')))/'platform.sqlite';DB.parent.mkdir(parents=True,exist_ok=True)
-app=FastAPI(title='江西物流一张网',version='1.2.0')
+app=FastAPI(title='江西物流一张网',version='1.3.0')
 def db():
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row;return c
 def now():return datetime.now().isoformat(timespec='seconds')
@@ -40,6 +40,24 @@ with db() as c:
   for i in range(1,5):
    x={'title':['企业认证材料核验','运输异常协同处置','资源共享授权申请','政策咨询服务'][i-1],'company':'江西铜业物流','status':['待受理','处理中','待复核','已关闭'][i-1],'created':now(),'description':'模拟服务工单。'}
    c.execute('insert into records values(?,?,?,?,1)',(f'TKT-{i:04}','tickets',json.dumps(x,ensure_ascii=False),'江西铜业物流'))
+ # Add a small cross-region sample set on existing databases as well as clean installs.
+ # These records are clearly simulated and let the demo show that the network is not
+ # limited to Jiangxi endpoints.
+ national=[
+  ('DMD-GLOBAL-0001','JX-INT-0001','省际 / 全国','赣州铜材铁路干线至武汉','赣州国际陆港','武汉铁路物流中心','铁路运输','铜材',186,'国内铁路货运单证与班列时刻需由承运方确认。','武汉铁路物流中心','铁路'),
+  ('DMD-GLOBAL-0002','JX-INT-0002','省际 / 全国','南昌冷链公路至广州白云','南昌向塘国际陆港','广州白云区','公路运输','冷链食品',42,'温控与货车通行安排需承运方确认。','','公路'),
+  ('DMD-GLOBAL-0003','JX-INT-0003','国际 / 跨境','江西铜材出口至新加坡','九江港城西港区','Singapore Port','国际多式联运','铜材',520,'国际水运与口岸节点仅作路线计划示例；海外地名需核验，未接入港航实时数据。','上海港','公路,水路')]
+ for did,wid,scope,title,origin,destination,mode,cargo,weight,description,nodes,modes in national:
+  if not c.execute('select 1 from records where id=?',(did,)).fetchone():
+   base={'scope':scope,'title':title,'origin':origin,'destination':destination,'cargo':cargo,'weight':weight,'mode':mode,'routeNodes':nodes,'routeModes':modes,'company':'江西铜业物流','status':'待响应','price':0,'created':now(),'deadline':(datetime.now()+timedelta(days=18)).date().isoformat(),'description':description}
+   c.execute('insert into records values(?,?,?,?,1)',(did,'demands',json.dumps(base,ensure_ascii=False),'江西铜业物流'))
+   way={**base,'title':title+' · 运输任务','status':'在途','progress':43,'eta':(datetime.now()+timedelta(hours=30)).isoformat(timespec='minutes'),'sourceId':'EXT-'+wid}
+   c.execute('insert into records values(?,?,?,?,1)',(wid,'waybills',json.dumps(way,ensure_ascii=False),'江西铜业物流'))
+ for rid in ('DMD-GLOBAL-0003','JX-INT-0003'):
+  row=c.execute('select data from records where id=?',(rid,)).fetchone()
+  if row:
+   sample=json.loads(row['data']);sample['routeNodes']='上海港';sample['routeModes']='公路,水路'
+   c.execute('update records set data=? where id=?',(json.dumps(sample,ensure_ascii=False),rid))
 def user(req):
  token=req.cookies.get('jx_session','')
  with db() as c:r=c.execute('select u.* from sessions s join users u on u.name=s.name where s.token=? and s.expires>?',(token,time.time())).fetchone()
@@ -50,7 +68,7 @@ def visible(u,r):return u['role']=='admin' or r['owner'] in (u['company'],'publi
 def record(r):return {'id':r['id'],'kind':r['kind'],'version':r['version'],**json.loads(r['data'])}
 KINDS={'demands','resources','waybills','policies','alerts','interfaces','tickets'}
 @app.get('/health')
-def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.2.0','routeDetails':True,'realRoadRouting':True}
+def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.3.0','routeDetails':True,'realRoadRouting':True}
 @app.post('/api/login')
 async def login(req:Request):
  ip=req.client.host if req.client else 'unknown';attempts=LOGIN_ATTEMPTS.setdefault(ip,[]);attempts[:]=[t for t in attempts if time.time()-t<60]

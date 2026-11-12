@@ -19,22 +19,32 @@ def km(a,b):
 def build_route(x,kind):
  seed=int(hashlib.sha256(x['id'].encode()).hexdigest()[:8],16);mode=x.get('mode','公路运输');origin=x.get('origin','待核实起点');dest=x.get('destination','待核实终点');a,ak=point(origin);b,bk=point(dest)
  # Use real hub coordinates as anchors; links and interpolated points are simulation, not road geometry.
- candidates=['南昌铁路物流中心','樟树中转枢纽','吉安铁路货场','鹰潭铁路中转场'] if '铁' in mode else ['丰城港换装码头','九江铁路货场','樟树中转枢纽'] if '水' in mode else ['弋阳公路服务节点','万载公路中转站','樟树中转枢纽']
+ international='国际' in mode or '跨境' in mode
+ multimode=('铁' in mode and '水' in mode) or international
+ candidates=['南昌铁路物流中心','丰城港换装码头','樟树中转枢纽'] if multimode else ['南昌铁路物流中心','樟树中转枢纽','吉安铁路货场','鹰潭铁路中转场'] if '铁' in mode else ['丰城港换装码头','九江铁路货场','樟树中转枢纽'] if '水' in mode else ['弋阳公路服务节点','万载公路中转站','樟树中转枢纽']
  chosen=[]
  direct=max(1,km(a,b))
- for n in sorted(candidates,key=lambda n:km(a,NODES[n])+km(NODES[n],b)):
+ for n in (sorted(candidates,key=lambda n:km(a,NODES[n])+km(NODES[n],b)) if ak and bk else []):
   c=NODES[n]
   if km(a,c)>5 and km(b,c)>5 and km(a,c)+km(c,b)<direct*2.8+50:chosen.append(n)
-  if len(chosen)==(2 if ('铁' in mode or '水' in mode) else 1):break
+  if len(chosen)==(2 if ('铁' in mode or '水' in mode or international) else 1):break
  if not chosen and direct>10:
   c=[round((a[0]+b[0])/2,6),round((a[1]+b[1])/2,6)];mid='模拟中途交接节点';points=[(origin,a),(mid,c),(dest,b)]
  else:points=[(origin,a)]+[(n,list(NODES[n])) for n in chosen]+[(dest,b)]
+ # A user-specified itinerary takes precedence. Nodes are geocoded by the routing
+ # provider below; unresolved nodes are never plotted at a default Jiangxi point.
+ via=[n.strip() for n in re.split(r'[;,，；]+',str(x.get('routeNodes',''))) if n.strip()]
+ if via:points=[(origin,a)]+[(n,point(n)[0]) for n in via]+[(dest,b)]
  isway=kind=='waybills';progress=float(x.get('progress',0)) if isway else 0;progress=max(0,min(100,progress));status=x.get('status','待响应')
  segments=[];track=[];cumulative=0
  started=datetime.fromisoformat(x.get('created',datetime.now().isoformat()))-timedelta(hours=36)
  for i in range(len(points)-1):
-  n1,p1=points[i];n2,p2=points[i+1];transport=('铁路' if '铁' in mode else '水运') if len(points)>3 and i==1 else ('铁路' if '铁' in mode else '水运') if len(points)==3 and i==1 and ('铁' in mode or '水' in mode) else '公路'
-  dist=round(km(p1,p2)*(1.2 if transport=='公路' else 1.08),1);duration=round(dist/({'公路':55,'铁路':65,'水运':18}[transport])+(.4 if i==0 else 1.2),1)
+  n1,p1=points[i];n2,p2=points[i+1]
+  provided=[v.strip() for v in re.split(r'[;,，；]+',str(x.get('routeModes',''))) if v.strip()]
+  itinerary=provided or (['公路','铁路','水运','公路'] if multimode else ['公路','铁路','公路'] if '铁' in mode else ['公路','水运','公路'] if '水' in mode else ['公路','航空','公路'] if '航空' in mode else ['公路'])
+  transport=itinerary[min(i,len(itinerary)-1)] if len(points)>2 else (mode if not ak or not bk else itinerary[0])
+  transport={'水路':'水运','海运':'水运','内河航运':'水运','航空运输':'航空','铁路运输':'铁路','公路运输':'公路'}.get(transport,transport)
+  dist=round(km(p1,p2)*(1.2 if transport=='公路' else 1.08),1);duration=round(dist/({'公路':55,'铁路':65,'水运':18,'航空':600}.get(transport,40))+(.4 if i==0 else 1.2),1)
   geom=[]
   for j in range(21):
    f=j/20;v=[round(p1[0]+(p2[0]-p1[0])*f,6),round(p1[1]+(p2[1]-p1[1])*f,6)];geom.append(v)
