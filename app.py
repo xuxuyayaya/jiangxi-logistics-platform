@@ -83,8 +83,12 @@ with db() as c:
  # Explicit example itinerary; these stations are declared sample business nodes, never inferred transfers.
  for rid,kind in [('DMD-MULTI-0001','demands'),('JX-MULTI-0001','waybills')]:
   if not c.execute('select 1 from records where id=?',(rid,)).fetchone():
-   d={'title':'南昌至上海公铁联运（分段线路示例）','origin':'南昌向塘国际陆港','destination':'上海港','routeNodes':'南昌站[115.912,28.665];上海虹桥站[121.327,31.2]','routeModes':'公路,铁路,公路','mode':'公铁联运','scope':'跨省 / 全国','cargo':'电子产品','weight':20,'company':'江西铜业物流','status':'在途' if kind=='waybills' else '待响应','progress':40,'created':now(),'description':'模拟运单，节点为明确指定的线路查询样例；铁路为轨道规划参考，不代表货运受理或班列任务。'}
+   d={'title':'南昌至上海公铁联运（分段线路示例）','origin':'南昌向塘国际陆港','destination':'上海洋山深水港','destinationCoords':[121.99,30.62],'routeNodes':'南昌站[115.912,28.665];上海虹桥站[121.327,31.2]','routeModes':'公路,铁路,公路','mode':'公铁联运','scope':'跨省 / 全国','cargo':'电子产品','weight':20,'company':'江西铜业物流','status':'在途' if kind=='waybills' else '待响应','progress':40,'created':now(),'description':'模拟运单，节点为明确指定的线路查询样例；铁路为轨道规划参考，不代表货运受理或班列任务。'}
    c.execute('insert into records values(?,?,?,?,1)',(rid,kind,json.dumps(d,ensure_ascii=False),'江西铜业物流'))
+ for rid in ('DMD-MULTI-0001','JX-MULTI-0001'):
+  row=c.execute('select data from records where id=?',(rid,)).fetchone()
+  if row:
+   d=json.loads(row['data']);d.update(destination='上海洋山深水港',destinationCoords=[121.99,30.62]);c.execute('update records set data=? where id=?',(json.dumps(d,ensure_ascii=False),rid))
  # Normalize demo supply fields so matching never confuses warehouse area with transport tonnage.
  for row in c.execute('select id,data from records where kind="resources"').fetchall():
   d=json.loads(row['data']);kind=d.get('mode','');is_transport=kind in ('车船运力','普通货车','冷藏车','冷藏车运力','铁路运力','船舶运力') or d.get('resourceCategory')=='transport'
