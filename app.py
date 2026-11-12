@@ -1,4 +1,4 @@
-import os,json,sqlite3,secrets,hashlib,hmac,time,csv,io,math
+import os,json,sqlite3,secrets,hashlib,hmac,time,csv,io,math,re
 from pathlib import Path
 from datetime import datetime,timedelta
 from fastapi import FastAPI,Request,HTTPException
@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 BASE=Path(__file__).parent
 LOGIN_ATTEMPTS={}
 DB=Path(os.getenv('DATA_DIR',str(BASE/'data')))/'platform.sqlite';DB.parent.mkdir(parents=True,exist_ok=True)
-app=FastAPI(title='江西物流一张网',version='1.4.0')
+app=FastAPI(title='江西物流一张网',version='1.5.0')
 def db():
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row;return c
 def now():return datetime.now().isoformat(timespec='seconds')
@@ -80,6 +80,23 @@ with db() as c:
   if row:
    sample=json.loads(row['data']);sample['routeNodes']='洋山深水港[121.99,30.62]';sample['destinationCoords']=[103.82,1.26];sample['routeModes']='公路,水路'
    c.execute('update records set data=? where id=?',(json.dumps(sample,ensure_ascii=False),rid))
+ # Normalize demo supply fields so matching never confuses warehouse area with transport tonnage.
+ for row in c.execute('select id,data from records where kind="resources"').fetchall():
+  d=json.loads(row['data']);kind=d.get('mode','');is_transport=kind in ('车船运力','普通货车','冷藏车','冷藏车运力','铁路运力','船舶运力') or d.get('resourceCategory')=='transport'
+  d.setdefault('resourceCategory','transport' if is_transport else 'warehouse')
+  d.setdefault('capacityUnit','吨' if is_transport else '㎡')
+  d.setdefault('transportModes',['公路'] if kind in ('车船运力','普通货车','冷藏车','冷藏车运力') else ['铁路'] if kind=='铁路运力' else ['水运'] if kind=='船舶运力' else [])
+  d.setdefault('coldChain','冷' in kind or '冷' in str(d.get('temperature','')))
+  d.setdefault('temperatureRange',d.get('temperature') if d.get('coldChain') else None)
+  d.setdefault('coverage',['江西省','全国']);d.setdefault('dataSource','演示资源样例')
+  if d != json.loads(row['data']):c.execute('update records set data=? where id=?',(json.dumps(d,ensure_ascii=False),row['id']))
+ demo_supplies=[
+  ('RES-COLD-TRUCK-01',{'title':'赣州产地冷藏车队（模拟）','origin':'赣州市','company':'江西冷链运力示例','mode':'冷藏车运力','resourceCategory':'transport','transportModes':['公路'],'vehicleType':'冷藏车','capacity':120,'available':42,'capacityUnit':'吨','coldChain':True,'temperatureRange':'-18～+8℃（演示能力，实际须供方核验）','coverage':['江西省','全国'],'status':'已认证','price':3.6,'dataSource':'模拟匹配样例','description':'用于演示生鲜公路段温控运力匹配，不代表真实车辆或实时可约运力。'}),
+  ('RES-FURNITURE-DOCK-01',{'title':'南康大件装卸与暂存点（模拟）','origin':'赣州市南康区','company':'南康家具物流示例','mode':'普通仓','resourceCategory':'warehouse','transportModes':[],'capacity':6000,'available':1600,'capacityUnit':'㎡','coldChain':False,'temperature':'常温','coverage':['江西省'],'status':'已认证','price':22,'dataSource':'模拟匹配样例','handlingEquipment':['叉车','装卸平台（需核验）'],'oversizeHandling':'大件长度、承重和装卸条件逐单确认','description':'用于展示家具临时仓储与装卸条件核验；面积和设备信息为演示数据。'}),
+  ('RES-BULK-RAIL-01',{'title':'省际铁路大宗货运能力（待核验）','origin':'南昌铁路物流中心','company':'铁路运力接入示例','mode':'铁路运力','resourceCategory':'transport','transportModes':['铁路'],'capacity':1600,'available':780,'capacityUnit':'吨','coldChain':False,'coverage':['江西省','全国'],'status':'待核验','price':None,'dataSource':'模拟待核验资源','description':'铁路运量、车皮、班次和运价须向铁路承运方核实；当前记录不构成可订运力。'})]
+ for rid,d in demo_supplies:
+  if not c.execute('select 1 from records where id=?',(rid,)).fetchone():c.execute('insert into records values(?,?,?,?,1)',(rid,'resources',json.dumps({**d,'created':now()},ensure_ascii=False),d['company']))
+
 def user(req):
  token=req.cookies.get('jx_session','')
  with db() as c:r=c.execute('select u.* from sessions s join users u on u.name=s.name where s.token=? and s.expires>?',(token,time.time())).fetchone()
@@ -90,7 +107,7 @@ def visible(u,r):return u['role']=='admin' or r['owner'] in (u['company'],'publi
 def record(r):return {'id':r['id'],'kind':r['kind'],'version':r['version'],**json.loads(r['data'])}
 KINDS={'demands','resources','waybills','policies','alerts','interfaces','tickets'}
 @app.get('/health')
-def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.4.0','routeDetails':True,'realRoadRouting':True,'realRailTrackRouting':True,'seaRoutingConfigured':bool(os.getenv('SEAROUTES_API_KEY'))}
+def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.5.0','routeDetails':True,'realRoadRouting':True,'realRailTrackRouting':True,'seaRoutingConfigured':bool(os.getenv('SEAROUTES_API_KEY'))}
 @app.post('/api/login')
 async def login(req:Request):
  ip=req.client.host if req.client else 'unknown';attempts=LOGIN_ATTEMPTS.setdefault(ip,[]);attempts[:]=[t for t in attempts if time.time()-t<60]
@@ -212,14 +229,60 @@ def matching(rid:str,req:Request):
   row=c.execute('select * from records where kind="demands" and id=?',(rid,)).fetchone()
   if not row or not visible(u,row):raise HTTPException(404,'需求不存在或无权访问')
   demand=record(row);resources=[record(r) for r in c.execute('select * from records where kind="resources"') if visible(u,r)]
- weight=float(demand.get('weight',0) or 0);result=[]
+ weight=float(demand.get('weight',0) or 0);requested=demand.get('routeModes') or ''
+ modes=[x.strip() for x in re.split(r'[;,，；]+',str(requested)) if x.strip()]
+ if not modes:
+  m=str(demand.get('mode',''))
+  modes=([v for v,key in [('公路','公'),('铁路','铁'),('水运','水') ] if key in m] if '联运' in m or '多式' in m else [m])
+ aliases={'水路':'水运','海运':'水运','水路运输':'水运','铁路运输':'铁路','公路运输':'公路','航空运输':'航空'}
+ modes=[aliases.get(x,x) for x in modes];modes=list(dict.fromkeys(modes))
+ temp=str(demand.get('temperatureRequirement','') or '')
+ requires_cold=not any(x in temp for x in ('无温控','无需温控','不需要冷链','常温')) and any(x in temp for x in ('冷藏','冷冻','冷链运输','温控运输'))
+ requires_cold=requires_cold or ('冷链' in str(demand.get('cargo','')) and not any(x in temp for x in ('无温控','无需温控','常温')))
+ hazardous=bool(demand.get('hazardous')) or bool(demand.get('hazardClass'))
+ storage_needed=bool(demand.get('storageHours') or demand.get('storageAreaM2') or demand.get('storageVolumeM3') or demand.get('warehousingRequired'))
+ result=[]
  for r in resources:
-  reasons=[];is_transport=r.get('mode')=='车船运力';capacity=float(r.get('available',0) or 0);cold='冷' in demand.get('cargo','') or '冷' in demand.get('description','')
-  eligible=is_transport and r.get('status')=='已认证' and capacity>=weight and not cold and demand.get('status')!='已关闭'
-  reasons.append('可用运力'+str(capacity)+'吨' if is_transport else '仓储供给，不能直接替代运输运力')
-  if demand.get('status')=='已关闭':reasons.append('需求已关闭，不再产生可承接推荐')
-  if cold:reasons.append('缺少已核验冷链运输能力，不能确认满足温控要求')
-  same=r.get('origin')==demand.get('origin');score=(60+20*same+10*(capacity>=weight)+10*(demand.get('mode')=='公路运输')) if eligible else 0
-  result.append({**r,'capacityUnit':'吨' if is_transport else '㎡','eligible':eligible,'matchScore':score,'scope':'可匹配公路段；其他运输段需另行确认' if eligible else '不满足当前运输需求硬约束','reasons':reasons,'locationMatch':same,'referenceUnitPrice':r.get('price'),'priceBasis':'模拟供方报价参数，计费单位和费用范围待确认；不直接计算成交价'})
- result.sort(key=lambda r:(r['eligible'],r['matchScore']),reverse=True)
- return {'demand':demand,'supplies':result,'eligibleCount':sum(r['eligible'] for r in result),'supplyCount':len(result),'weightTons':weight,'simulation':True,'criteria':'运输资源类型、已认证状态、可用吨位、温控硬约束；评分=基础60+同起运节点20+容量满足10+纯公路需求10；评分仅对硬约束通过者计算。'}
+  is_transport=r.get('resourceCategory')=='transport' or r.get('mode') in ('车船运力','普通货车','冷藏车','冷藏车运力','铁路运力','船舶运力')
+  category='transport' if is_transport else 'warehouse';available=float(r.get('available',0) or 0);capacity=float(r.get('capacity',0) or 0)
+  supports=[aliases.get(str(x),str(x)) for x in (r.get('transportModes') or (['公路'] if r.get('mode') in ('车船运力','普通货车','冷藏车','冷藏车运力') else []))]
+  compatible=[m for m in modes if m in supports];reasons=[];hard=[]
+  if category=='transport':
+   if not compatible:hard.append('供给运输方式不覆盖当前需求运输段')
+   if available<=0:hard.append('当前可用运力为零或未提供')
+   if requires_cold and not r.get('coldChain'):hard.append('需求要求温控，供给未声明冷链能力')
+   if hazardous and not r.get('hazardousGoods'):hard.append('需求包含危险属性，供给未提交相应资质')
+   if available<weight:reasons.append(f'可用{available:g}吨，少于需求{weight:g}吨；可协商分批/多车供给')
+   if not compatible and supports:reasons.append('可提供方式：'+ '、'.join(supports))
+   if compatible:reasons.append('可匹配运输段：'+ '、'.join(compatible))
+   if requires_cold and r.get('coldChain'):
+    actual=str(r.get('temperatureRange') or '')
+    requested_range=str(demand.get('temperatureRange') or '')
+    if requested_range and actual and actual!=requested_range:hard.append('温区未能核实一致：请由供方确认')
+    elif not actual:hard.append('冷链能力已声明，但具体温区待供方核验')
+    else:reasons.append('冷链能力及温区需随订单再次核验：'+actual)
+   complete=bool(modes) and all(m in supports for m in modes)
+   if modes and compatible and not complete:reasons.append('仅为部分运输段供给，不代表可独立完成整票多式联运')
+   capacity_ok=available>=weight
+   eligible=not hard and capacity_ok and bool(compatible) and r.get('status')=='已认证' and demand.get('status') not in ('已关闭','已承接')
+   partial=not hard and available>0 and bool(compatible) and (not capacity_ok or not complete) and r.get('status')=='已认证'
+   if r.get('status')!='已认证':hard.append('供方资质/资源状态待核验')
+   if demand.get('status') in ('已关闭','已承接'):hard.append('需求已关闭或已承接')
+   if not modes:hard.append('需求未明确运输方式')
+   score=(25*len(compatible)/max(1,len(modes))+25*(min(available/weight,1) if weight else 0)+(20 if r.get('origin')==demand.get('origin') else 10 if r.get('coverage') else 0)+(15 if complete else 6)+(15 if not requires_cold or r.get('coldChain') else 0)) if not hard else 0
+   if hard:reasons.extend(hard)
+   result.append({**r,'resourceCategory':category,'capacityUnit':r.get('capacityUnit','吨'),'eligible':eligible,'partialMatch':partial,'completeTrip':complete,'matchScore':round(score) if (eligible or partial) else 0,'scope':'整票方式覆盖' if complete else '仅覆盖部分运输段','matchedModes':compatible,'reasons':reasons,'hardGaps':hard,'referenceUnitPrice':r.get('price'),'priceBasis':'演示资源报价参数；实际计价单位、燃油/装卸/附加费和有效期须供需双方确认'})
+  else:
+   req_area=float(demand.get('storageAreaM2',0) or 0);req_volume=float(demand.get('storageVolumeM3',0) or 0);unit='㎡' if req_area else 'm³' if req_volume else None
+   if requires_cold and not r.get('coldChain'):hard.append('需求需要冷链仓储，供给未声明冷库能力')
+   if not storage_needed:hard.append('当前需求未填写仓储时长/面积/体积；仓储供给单独展示，不计作运输运力')
+   req_capacity=req_area if unit=='㎡' else req_volume if unit=='m³' else 0
+   if req_capacity and available<req_capacity:hard.append(f'可用仓储{available:g}{r.get("capacityUnit","㎡")}低于需求{req_capacity:g}{unit}')
+   eligible=storage_needed and not hard and r.get('status')=='已认证' and demand.get('status') not in ('已关闭','已承接')
+   if r.get('status')!='已认证':hard.append('仓储资质/资源状态待核验')
+   if hard:reasons.extend(hard)
+   else:reasons.extend(['仓储资源按面积/容积单独匹配','库型、温区、入库时段和装卸能力须逐项确认'])
+   result.append({**r,'resourceCategory':category,'capacityUnit':r.get('capacityUnit','㎡'),'eligible':eligible,'partialMatch':False,'completeTrip':False,'matchScore':65 if eligible else 0,'scope':'仓储服务，不替代运输运力','matchedModes':[],'reasons':reasons,'hardGaps':hard,'referenceUnitPrice':r.get('price'),'priceBasis':'演示仓储报价参数；计费单位、仓租周期、装卸费用和温控附加费待双方确认'})
+ result.sort(key=lambda x:(x['eligible'],x['partialMatch'],x['matchScore']),reverse=True)
+ transport=[x for x in result if x['resourceCategory']=='transport'];warehouses=[x for x in result if x['resourceCategory']=='warehouse']
+ return {'demand':demand,'supplies':result,'transportSupplies':transport,'warehouseSupplies':warehouses,'eligibleCount':sum(x['eligible'] for x in result),'partialCount':sum(x['partialMatch'] for x in result),'supplyCount':len(result),'weightTons':weight,'requiredModes':modes,'requiresColdChain':requires_cold,'requiresHazmat':hazardous,'requiresStorage':storage_needed,'simulation':True,'criteria':'先核运输方式、资质、温控/危险品、可用能力及业务状态，再按容量、地点覆盖和完整链路覆盖度评分。运输吨位与仓储面积/容积分别匹配；分段运力显示部分匹配，不冒充整票承运能力。'}

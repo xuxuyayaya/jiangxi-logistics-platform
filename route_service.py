@@ -26,29 +26,17 @@ def parse_user_point(value):
 def km(a,b):
  lon1,lat1,lon2,lat2=map(math.radians,(*a,*b));dlon=lon2-lon1;dlat=lat2-lat1;return 6371*2*math.asin(min(1,math.sqrt(math.sin(dlat/2)**2+math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2)))
 def build_route(x,kind):
- seed=int(hashlib.sha256(x['id'].encode()).hexdigest()[:8],16);mode=x.get('mode','公路运输');origin=x.get('origin','待核实起点');dest=x.get('destination','待核实终点');a,ak=point(origin);b,bk=point(dest)
+ """Build only the endpoints and explicitly specified waypoints of this order."""
+ seed=int(hashlib.sha256(x['id'].encode()).hexdigest()[:8],16)
+ mode=x.get('mode','公路运输');origin=x.get('origin','待核实起点');dest=x.get('destination','待核实终点')
+ a,ak=point(origin);b,bk=point(dest);manual_indices=set()
  for idx,key in ((0,'originCoords'),(1,'destinationCoords')):
   coord=parse_user_point('['+str(x.get(key,''))+']')
   if coord:
    if idx==0:a,ak=coord,True
    else:b,bk=coord,True
- # Use real hub coordinates as anchors; links and interpolated points are simulation, not road geometry.
- international='国际' in mode or '跨境' in mode
- multimode=('铁' in mode and '水' in mode) or international
- candidates=['南昌铁路物流中心','丰城港换装码头','樟树中转枢纽'] if multimode else ['南昌铁路物流中心','樟树中转枢纽','吉安铁路货场','鹰潭铁路中转场'] if '铁' in mode else ['丰城港换装码头','九江铁路货场','樟树中转枢纽'] if '水' in mode else ['弋阳公路服务节点','万载公路中转站','樟树中转枢纽']
- chosen=[]
- direct=max(1,km(a,b))
- for n in (sorted(candidates,key=lambda n:km(a,NODES[n])+km(NODES[n],b)) if ak and bk and not (x.get('originCoords') and x.get('destinationCoords')) else []):
-  c=NODES[n]
-  if km(a,c)>5 and km(b,c)>5 and km(a,c)+km(c,b)<direct*2.8+50:chosen.append(n)
-  if len(chosen)==(2 if ('铁' in mode or '水' in mode or international) else 1):break
- if not chosen and direct>10 and not (ak and bk):
-  c=[round((a[0]+b[0])/2,6),round((a[1]+b[1])/2,6)];mid='模拟中途交接节点';points=[(origin,a),(mid,c),(dest,b)]
- else:points=[(origin,a)]+[(n,list(NODES[n])) for n in chosen]+[(dest,b)]
- # A user-specified itinerary takes precedence. Nodes are geocoded by the routing
- # provider below; unresolved nodes are never plotted at a default Jiangxi point.
+ points=[(origin,a),(dest,b)]
  via=[n.strip() for n in re.split(r'[;；\n]+',str(x.get('routeNodes',''))) if n.strip()]
- manual_indices=set()
  if via:
   via_points=[]
   for n in via:
@@ -59,36 +47,38 @@ def build_route(x,kind):
  for index,key in ((0,'originCoords'),(len(points)-1,'destinationCoords')):
   coord=parse_user_point('['+str(x.get(key,''))+']')
   if coord:points[index]=(points[index][0],coord);manual_indices.add(index)
- isway=kind=='waybills';progress=float(x.get('progress',0)) if isway else 0;progress=max(0,min(100,progress));status=x.get('status','待响应')
- segments=[];track=[];cumulative=0
+
+ normalize={'水路':'水运','海运':'水运','内河航运':'水运','水路运输':'水运','水运运输':'水运','铁路运输':'铁路','公路运输':'公路','航空运输':'航空'}
+ provided=[normalize.get(v.strip(),v.strip()) for v in re.split(r'[;,，；]+',str(x.get('routeModes',''))) if v.strip()]
+ base_mode=normalize.get(str(mode).strip(),str(mode).strip())
+ multi=any(t in str(mode) for t in ('联运','多式','国际'))
+ if not provided and not multi:provided=[base_mode]
+ config_error=None
+ if len(provided)!=len(points)-1:
+  if provided:config_error=f'已填写{len(provided)}个运输段，当前路线包含{len(points)-1}段；请按途经节点补齐运输方式。'
+  elif multi:config_error='多式联运需要明确每段实际起讫节点和运输方式；平台不会自动插入中转节点。'
+  segment_modes=['待补充实际路线']*(len(points)-1)
+ else:segment_modes=provided
+ isway=kind=='waybills';progress=max(0,min(100,float(x.get('progress',0) or 0))) if isway else 0;status=x.get('status','待响应')
  started=datetime.fromisoformat(x.get('created',datetime.now().isoformat()))-timedelta(hours=36)
- for i in range(len(points)-1):
-  n1,p1=points[i];n2,p2=points[i+1]
-  provided=[v.strip() for v in re.split(r'[;,，；]+',str(x.get('routeModes',''))) if v.strip()]
-  itinerary=provided or (['公路','铁路','水运','公路'] if multimode else ['公路','铁路','公路'] if '铁' in mode else ['公路','水运','公路'] if '水' in mode else ['公路','航空','公路'] if '航空' in mode else ['公路'])
-  transport=itinerary[min(i,len(itinerary)-1)] if len(points)>2 else (mode if not ak or not bk else itinerary[0])
-  transport={'水路':'水运','海运':'水运','内河航运':'水运','航空运输':'航空','铁路运输':'铁路','公路运输':'公路'}.get(transport,transport)
-  dist=round(km(p1,p2)*(1.2 if transport=='公路' else 1.08),1);duration=round(dist/({'公路':55,'铁路':65,'水运':18,'航空':600}.get(transport,40))+(.4 if i==0 else 1.2),1)
-  geom=[]
-  for j in range(21):
-   f=j/20;v=[round(p1[0]+(p2[0]-p1[0])*f,6),round(p1[1]+(p2[1]-p1[1])*f,6)];geom.append(v)
-   if i==0 or j>0:track.append({'lng':v[0],'lat':v[1],'segment':i,'fraction':round((i+f)/(len(points)-1),4),'source':'模拟路线采样点'})
-  sp=progress/100*(len(points)-1)-i;sstate='已完成' if sp>=1 else '执行中' if sp>0 else '待执行' if isway else '待承接'
-  dept=started+timedelta(hours=cumulative);arr=dept+timedelta(hours=duration);cumulative+=duration
-  segments.append({'id':f'{x["id"]}-S{i+1}','index':i,'mode':transport,'from':n1,'to':n2,'fromPoint':p1,'toPoint':p2,'distanceKm':dist,'durationHours':duration,'status':sstate,'progress':round(max(0,min(1,sp))*100),'carrier':['赣通公路运输（模拟）','江西干线联运（模拟）','赣运城配服务（模拟）'][i%3],'vehicle':f'赣A·{10000+seed%80000}' if transport=='公路' else f'模拟班列 X{7000+seed%900}' if transport=='铁路' else f'模拟货船 赣航{seed%1000:03}','driver':'模拟驾驶员' if transport=='公路' else '模拟调度员','phone':'138****'+str(seed%10000).zfill(4),'plannedDeparture':dept.isoformat(timespec='minutes'),'plannedArrival':arr.isoformat(timespec='minutes'),'geometry':geom,'notice':'距离、时效、载具及线路均为模拟估值；连接线不代表真实道路或航道。'})
+ segments=[];events=[]
+ for i,((n1,p1),(n2,p2)) in enumerate(zip(points,points[1:])):
+  transport=segment_modes[i]
+  sstate='已完成' if isway and progress>=(i+1)/len(points)*100 else '执行中' if isway and progress>i/len(points)*100 else '待执行' if isway else '待承接'
+  segments.append({'id':f'{x["id"]}-S{i+1}','index':i,'mode':transport,'from':n1,'to':n2,'fromPoint':p1,'toPoint':p2,'distanceKm':None,'durationHours':None,'status':sstate,'progress':0,'carrier':'待承运方确认','vehicle':'待接入','driver':'待接入','phone':'','plannedDeparture':None,'plannedArrival':None,'geometry':[],'notice':'线路只采用对应路径服务返回的实际路线；未查询到路线时不绘制连接线。'})
  for leg in segments:
-  qty=max(1,math.ceil(float(x.get('weight',100) or 100)/32)) if leg['mode']=='公路' else 1
-  leg['vehicleCount']=qty
-  leg['vehicles']=[{'number':f'赣A·{10000+(seed+j*37)%80000}' if leg['mode']=='公路' else leg['vehicle'],'cargoTons':round(float(x.get('weight',100) or 100)/qty,3),'status':leg['status'],'source':'模拟载具配载示例'} for j in range(min(qty,100))]
-  leg['vehicleNotice']='公路按32吨/车演示估算；车型、核载及真实运输要求须由承运方核验。' if leg['mode']=='公路' else '模拟一项干线运输任务，不代表真实班列、舱位或承载许可。'
- total=sum(s['distanceKm'] for s in segments);idx=min(len(track)-1,round(progress/100*(len(track)-1)));cur=track[idx];events=[]
+  leg['vehicleCount']=None;leg['vehicles']=[]
+  leg['vehicleNotice']='运载工具及配载信息仅在承运方或业务系统接入后展示。'
  for i,(name,pt) in enumerate(points):
-  phase=i/(len(points)-1)*100;done=isway and progress>=phase and progress>0;etime=started if i==0 else datetime.fromisoformat(segments[i-1]['plannedArrival'])
-  events.append({'id':f'EVT-{seed%10000}-{i}','nodeIndex':i,'name':name,'point':pt,'event':['发运出库','换装交接','目的站签收'][0 if i==0 else 2 if i==len(points)-1 else 1],'plannedTime':etime.isoformat(timespec='minutes'),'actualTime':etime.isoformat(timespec='minutes') if done else None,'status':'已完成' if done else '计划节点','operator':'模拟节点操作员','source':'演示节点事件','remark':'完成状态按模拟运单进度推演，不是真实设备回传。'})
- weight=float(x.get('weight',100) or 100);cost=float(x.get('price',round(total*weight*.42)) or 0);costs=[{'name':n,'amount':round(cost*r,2),'basis':'模拟费用拆分，非结算或开票凭证'} for n,r in [('干线运输费',.68),('短驳接驳费',.18),('装卸与换装费',.09),('综合协同服务费',.05)]]
- alerts=[{'id':'RISK-'+str(seed%10000),'title':'模拟节点滞留核查','level':'中','status':'处理中','node':points[min(cur['segment']+1,len(points)-1)][0],'description':'示例运输异常，请按真实业务和设备证据核验。'}] if isway and status=='异常' else []
- docs=[{'id':f'{x["id"]}-{code}','name':name,'status':'已生成模拟样单' if code=='WB' else '示例占位／待真实文件','type':'模拟单据','generated':code=='WB'} for code,name in [('WB','多式联运电子运单'),('OUT','货物出库交接单'),('CHANGE','换装交接记录'),('RECEIPT','目的站签收回单')]]
- return {'order':x,'kind':kind,'routeId':'ROUTE-'+x['id'],'simulation':True,'coordinateSystem':'WGS84','coordinateVerified':ak and bk,'mode':mode,'progress':progress,'totalDistanceKm':round(total,1),'estimatedDurationHours':round(cumulative,1),'plannedStart':started.isoformat(timespec='minutes'),'plannedArrival':(started+timedelta(hours=cumulative)).isoformat(timespec='minutes'),'points':[{'name':n,'point':pt,'coordSource':'user' if i in manual_indices else 'lookup','type':'起点' if i==0 else '终点' if i==len(points)-1 else '中转','index':i} for i,(n,pt) in enumerate(points)],'segments':segments,'track':track,'position':cur,'events':events,'costs':costs,'alerts':alerts,'documents':docs,'totals':{'weightTons':weight,'packages':max(1,round(weight*3)),'containerCount':max(1,round(weight/25)),'referenceCost':round(cost,2)},'notice':'订单、节点、车辆、费用和事件为模拟业务数据。地图只绘制各路径服务返回的真实线路几何；铁路轨道不代表班次，水运航线不代表船舶轨迹；服务未返回线路时不绘制虚构连线。' }
+  done=isway and i/ max(1,len(points)-1)*100 <= progress and progress>0
+  events.append({'id':f'EVT-{seed%10000}-{i}','nodeIndex':i,'name':name,'point':pt,'event':'起运节点' if i==0 else '目的节点' if i==len(points)-1 else '用户指定途经节点','plannedTime':None,'actualTime':None,'status':'待真实事件接入' if not done else '待核验业务回执','operator':'待接入','source':'运单事件待接入','remark':'该节点来自订单起讫地或用户指定途经点，不代表实际交接已发生。'})
+ weight=float(x.get('weight',100) or 100);cost=float(x.get('price',0) or 0)
+ costs=[{'name':n,'amount':None,'basis':'待承运方报价/结算数据接入'} for n in ('干线运输费','短驳接驳费','装卸与换装费','综合协同服务费')]
+ alerts=[{'id':'RISK-'+str(seed%10000),'title':'模拟节点滞留核查','level':'中','status':'处理中','node':points[-1][0],'description':'示例运输异常，请按真实业务和设备证据核验。'}] if isway and status=='异常' else []
+ docs=[{'id':f'{x["id"]}-{code}','name':name,'status':'演示占位／待真实文件','type':'单据待接入','generated':False} for code,name in [('WB','多式联运电子运单'),('OUT','货物出库交接单'),('CHANGE','换装交接记录'),('RECEIPT','目的站签收回单')]]
+ result={'order':x,'kind':kind,'routeId':'ROUTE-'+x['id'],'simulation':True,'coordinateSystem':'WGS84','coordinateVerified':ak and bk,'mode':mode,'progress':progress,'totalDistanceKm':None,'estimatedDurationHours':None,'plannedStart':None,'plannedArrival':None,'points':[{'name':n,'point':pt,'coordSource':'user' if i in manual_indices or (i==0 and x.get('originCoords')) or (i==len(points)-1 and x.get('destinationCoords')) else 'lookup','type':'起点' if i==0 else '终点' if i==len(points)-1 else '用户指定途经点','index':i} for i,(n,pt) in enumerate(points)],'segments':segments,'track':[],'position':None,'events':events,'costs':costs,'alerts':alerts,'documents':docs,'totals':{'weightTons':weight,'packages':x.get('packages'),'containerCount':x.get('containers'),'referenceCost':cost or None},'notice':'订单与运单业务数据为演示数据。地图只显示对应路径服务返回的实际路线；起讫地之间不会自动补入模拟交接点。未指定或未查询到的路段不显示连接线。'}
+ if config_error:result['routeConfigError']=config_error
+ return result
 
 def register_routes(app,db,user,visible,record):
  @app.get('/api/routes/{kind}/{rid}')
