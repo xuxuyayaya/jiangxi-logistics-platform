@@ -203,7 +203,14 @@ async def plans(req:Request):
  try:w=float(x.get('weight',100))
  except (ValueError,TypeError):raise HTTPException(422,'重量格式错误')
  if not math.isfinite(w) or w<=0:raise HTTPException(422,'重量必须大于零')
- return {'simulation':True,'plans':[{'id':'PLAN-'+str(i),'name':n,'mode':m,'cost':round(w*c),'hours':h,'carbon':round(w*k,1),'segments':[x['origin'],'向塘国际陆港' if i==0 else '九江港换装节点' if i==1 else '高速公路干线',x['destination']],'notice':'模拟网络估算，非实时运价或可订舱位；不构成运输承诺。'} for i,(n,m,c,h,k) in enumerate([('均衡推荐','公铁联运',128,26,3.2),('成本优选','公水联运',98,42,2.5),('时效优先','公路直达',176,12,6.8)])]}
+ from route_service import NODES
+ from real_routes import geocode_place,route_road
+ a=list(NODES[x['origin']]) if x['origin'] in NODES else geocode_place(x['origin'])
+ b=list(NODES[x['destination']]) if x['destination'] in NODES else geocode_place(x['destination'])
+ if not a or not b:raise HTTPException(422,'起讫地未能定位，请填写明确的城市、地址或港口名称')
+ q=route_road(a,b)
+ return {'simulation':False,'plans':[{'id':'ROAD-PLAN','name':'高德道路路径','mode':'公路运输','origin':x['origin'],'destination':x['destination'],'segments':[x['origin'],x['destination']],**q}],'notice':'铁路、水运与多式联运需填写实际站港节点和运输段后逐段查询。'}
+
 @app.get('/api/export/{kind}')
 def export(kind:str,req:Request):
  data=listing(kind,req,size=200)['items'];out=io.StringIO();wr=csv.writer(out);wr.writerow(['编号','名称','企业','状态','模拟数据'])
