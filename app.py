@@ -5,6 +5,7 @@ from fastapi import FastAPI,Request,HTTPException
 from fastapi.responses import FileResponse,JSONResponse,Response
 from fastapi.staticfiles import StaticFiles
 BASE=Path(__file__).parent
+LOGIN_ATTEMPTS={}
 DB=Path(os.getenv('DATA_DIR',str(BASE/'data')))/'platform.sqlite';DB.parent.mkdir(parents=True,exist_ok=True)
 app=FastAPI(title='江西物流一张网',version='1.0.0')
 def db():
@@ -52,6 +53,9 @@ KINDS={'demands','resources','waybills','policies','alerts','interfaces','ticket
 def health():return {'status':'ok','database':'sqlite','mode':'simulation'}
 @app.post('/api/login')
 async def login(req:Request):
+ ip=req.client.host if req.client else 'unknown';attempts=LOGIN_ATTEMPTS.setdefault(ip,[]);attempts[:]=[t for t in attempts if time.time()-t<60]
+ if len(attempts)>=10:raise HTTPException(429,'登录尝试过于频繁，请一分钟后重试')
+ attempts.append(time.time())
  x=await req.json();name=str(x.get('username',''));p=str(x.get('password',''))
  with db() as c:
   r=c.execute('select * from users where name=?',(name,)).fetchone()
@@ -146,7 +150,8 @@ async def plans(req:Request):
 @app.get('/api/export/{kind}')
 def export(kind:str,req:Request):
  data=listing(kind,req,size=200)['items'];out=io.StringIO();wr=csv.writer(out);wr.writerow(['编号','名称','企业','状态','模拟数据'])
- for x in data:wr.writerow([x['id'],x['title'],x.get('company',''),x.get('status',''),'是'])
+ for x in data:
+  vals=[x['id'],x['title'],x.get('company',''),x.get('status',''),'是'];wr.writerow(["'"+str(v) if str(v).lstrip().startswith(('=','+','-','@')) else v for v in vals])
  return Response('\ufeff'+out.getvalue(),media_type='text/csv;charset=utf-8',headers={'Content-Disposition':f'attachment; filename="jiangxi-{kind}.csv"'})
 @app.get('/api/audit')
 def audits(req:Request):
