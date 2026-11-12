@@ -17,3 +17,7 @@ services:
         sync: false
       - key: AMAP_SECURITY_CODE
         sync: false
+      - key: AMAP_WEB_SERVICE_KEY
+        sync: false
+      - key: SEAROUTES_API_KEY
+        sync: false

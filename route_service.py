@@ -27,17 +27,22 @@ def km(a,b):
  lon1,lat1,lon2,lat2=map(math.radians,(*a,*b));dlon=lon2-lon1;dlat=lat2-lat1;return 6371*2*math.asin(min(1,math.sqrt(math.sin(dlat/2)**2+math.cos(lat1)*math.cos(lat2)*math.sin(dlon/2)**2)))
 def build_route(x,kind):
  seed=int(hashlib.sha256(x['id'].encode()).hexdigest()[:8],16);mode=x.get('mode','公路运输');origin=x.get('origin','待核实起点');dest=x.get('destination','待核实终点');a,ak=point(origin);b,bk=point(dest)
+ for idx,key in ((0,'originCoords'),(1,'destinationCoords')):
+  coord=parse_user_point('['+str(x.get(key,''))+']')
+  if coord:
+   if idx==0:a,ak=coord,True
+   else:b,bk=coord,True
  # Use real hub coordinates as anchors; links and interpolated points are simulation, not road geometry.
  international='国际' in mode or '跨境' in mode
  multimode=('铁' in mode and '水' in mode) or international
  candidates=['南昌铁路物流中心','丰城港换装码头','樟树中转枢纽'] if multimode else ['南昌铁路物流中心','樟树中转枢纽','吉安铁路货场','鹰潭铁路中转场'] if '铁' in mode else ['丰城港换装码头','九江铁路货场','樟树中转枢纽'] if '水' in mode else ['弋阳公路服务节点','万载公路中转站','樟树中转枢纽']
  chosen=[]
  direct=max(1,km(a,b))
- for n in (sorted(candidates,key=lambda n:km(a,NODES[n])+km(NODES[n],b)) if ak and bk else []):
+ for n in (sorted(candidates,key=lambda n:km(a,NODES[n])+km(NODES[n],b)) if ak and bk and not (x.get('originCoords') and x.get('destinationCoords')) else []):
   c=NODES[n]
   if km(a,c)>5 and km(b,c)>5 and km(a,c)+km(c,b)<direct*2.8+50:chosen.append(n)
   if len(chosen)==(2 if ('铁' in mode or '水' in mode or international) else 1):break
- if not chosen and direct>10:
+ if not chosen and direct>10 and not (ak and bk):
   c=[round((a[0]+b[0])/2,6),round((a[1]+b[1])/2,6)];mid='模拟中途交接节点';points=[(origin,a),(mid,c),(dest,b)]
  else:points=[(origin,a)]+[(n,list(NODES[n])) for n in chosen]+[(dest,b)]
  # A user-specified itinerary takes precedence. Nodes are geocoded by the routing
@@ -83,7 +88,7 @@ def build_route(x,kind):
  weight=float(x.get('weight',100) or 100);cost=float(x.get('price',round(total*weight*.42)) or 0);costs=[{'name':n,'amount':round(cost*r,2),'basis':'模拟费用拆分，非结算或开票凭证'} for n,r in [('干线运输费',.68),('短驳接驳费',.18),('装卸与换装费',.09),('综合协同服务费',.05)]]
  alerts=[{'id':'RISK-'+str(seed%10000),'title':'模拟节点滞留核查','level':'中','status':'处理中','node':points[min(cur['segment']+1,len(points)-1)][0],'description':'示例运输异常，请按真实业务和设备证据核验。'}] if isway and status=='异常' else []
  docs=[{'id':f'{x["id"]}-{code}','name':name,'status':'已生成模拟样单' if code=='WB' else '示例占位／待真实文件','type':'模拟单据','generated':code=='WB'} for code,name in [('WB','多式联运电子运单'),('OUT','货物出库交接单'),('CHANGE','换装交接记录'),('RECEIPT','目的站签收回单')]]
- return {'order':x,'kind':kind,'routeId':'ROUTE-'+x['id'],'simulation':True,'coordinateSystem':'WGS84','coordinateVerified':ak and bk,'mode':mode,'progress':progress,'totalDistanceKm':round(total,1),'estimatedDurationHours':round(cumulative,1),'plannedStart':started.isoformat(timespec='minutes'),'plannedArrival':(started+timedelta(hours=cumulative)).isoformat(timespec='minutes'),'points':[{'name':n,'point':pt,'coordSource':'user' if i in manual_indices else 'lookup','type':'起点' if i==0 else '终点' if i==len(points)-1 else '中转','index':i} for i,(n,pt) in enumerate(points)],'segments':segments,'track':track,'position':cur,'events':events,'costs':costs,'alerts':alerts,'documents':docs,'totals':{'weightTons':weight,'packages':max(1,round(weight*3)),'containerCount':max(1,round(weight/25)),'referenceCost':round(cost,2)},'notice':'订单、节点、线路、坐标采样、车辆、费用和事件均为模拟数据。地图只绘制有来源的高德道路几何；未接入铁路、港航线路时仅显示节点，不绘制虚构路线。' }
+ return {'order':x,'kind':kind,'routeId':'ROUTE-'+x['id'],'simulation':True,'coordinateSystem':'WGS84','coordinateVerified':ak and bk,'mode':mode,'progress':progress,'totalDistanceKm':round(total,1),'estimatedDurationHours':round(cumulative,1),'plannedStart':started.isoformat(timespec='minutes'),'plannedArrival':(started+timedelta(hours=cumulative)).isoformat(timespec='minutes'),'points':[{'name':n,'point':pt,'coordSource':'user' if i in manual_indices else 'lookup','type':'起点' if i==0 else '终点' if i==len(points)-1 else '中转','index':i} for i,(n,pt) in enumerate(points)],'segments':segments,'track':track,'position':cur,'events':events,'costs':costs,'alerts':alerts,'documents':docs,'totals':{'weightTons':weight,'packages':max(1,round(weight*3)),'containerCount':max(1,round(weight/25)),'referenceCost':round(cost,2)},'notice':'订单、节点、车辆、费用和事件为模拟业务数据。地图只绘制各路径服务返回的真实线路几何；铁路轨道不代表班次，水运航线不代表船舶轨迹；服务未返回线路时不绘制虚构连线。' }
 
 def register_routes(app,db,user,visible,record):
  @app.get('/api/routes/{kind}/{rid}')

@@ -19,7 +19,7 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 默认free计划不含持久盘，重启或重部署可能丢失新业务数据并恢复演示种子。保留业务数据需选择支持磁盘的付费实例并挂载 `/var/data`，设置 `DATA_DIR=/var/data`。本项目没有自行开通付费资源。后续多实例生产环境应迁移PostgreSQL。
 
-高德地图：在Render环境设置 `AMAP_WEB_KEY`（Web端JS API Key）、`AMAP_SECURITY_CODE`（安全密钥），控制台配置实际onrender.com域名白名单。JS Key为浏览器可见凭证；不得使用服务端Web服务密钥代替。无Key时明确展示模拟网络示意图。
+高德地图：在Render环境设置 `AMAP_WEB_KEY`（Web端JS API Key）、`AMAP_SECURITY_CODE`（安全密钥），控制台配置实际onrender.com域名白名单。道路规划另设置 `AMAP_WEB_SERVICE_KEY`。JS Key为浏览器可见凭证；不得使用服务端Web服务密钥代替。
 
 ## 业务范围
 
@@ -45,9 +45,9 @@ uvicorn app:app --host 0.0.0.0 --port 8000
 
 ## V1.2：真实道路规划与供需匹配
 
-`AMAP_WEB_SERVICE_KEY` 用于服务端高德坐标转换和V5道路路线查询，Key不会发送浏览器；`AMAP_WEB_KEY`和`AMAP_SECURITY_CODE`用于地图展示。道路里程、时长、道路名与指引来自高德响应，标注查询时间。缺Key、失败或无路线时不生成替代连线或数值。铁路、水运货运段需另外接入权威线路，不能以驾车结果替代。模拟GPS回放已停用，等待实际轨迹数据源。
+`AMAP_WEB_SERVICE_KEY` 用于服务端高德坐标转换和V5道路路线查询，Key不会发送浏览器；`AMAP_WEB_KEY`和`AMAP_SECURITY_CODE`用于地图展示。道路里程、时长、道路名与指引来自高德响应。铁路段接入 OpenRailRouting / OpenStreetMap 的已映射轨道线路，返回真实轨道几何，不含铁路班次、货运舱位或实时列车位置；轨道数据在部分地区可能缺失。水运段预留 Searoutes 海上路径API，需在Render设置 `SEAROUTES_API_KEY`（联系服务商申请试用或订阅Key）后才能显示真实水路几何。Key缺失、查询失败或服务无路线时不生成替代连线或数值。模拟GPS回放已停用，等待实际轨迹数据源。
 
-`/api/matching/{demandId}`展示需求货量、时效、起讫和模式，及供方类型、可用/总容量、单位、硬约束、评分、适配范围和报价口径。运力吨位与仓储面积分开，多式联运的公路资源仅表示可匹配公路段。已关闭需求不再生成可承接推荐。
+`/api/matching/{demandId}`展示需求货量、时效、起讫和模式，及供方类型、可用/总容量、单位、硬约束、评分、适配范围和报价口径。运力吨位与仓储面积分开，多式联运的公路资源仅表示可匹配公路段。已关闭需求不再生成可承接推荐。跨省需求与运单样例覆盖南昌—武汉、南昌—上海、上海—南昌、九江—杭州、赣州—深圳、南京—南昌等省际方向；样例单据和货量仍为演示数据。
 
 ## V1.3：跨区域业务与专业工作台
 

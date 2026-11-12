@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 BASE=Path(__file__).parent
 LOGIN_ATTEMPTS={}
 DB=Path(os.getenv('DATA_DIR',str(BASE/'data')))/'platform.sqlite';DB.parent.mkdir(parents=True,exist_ok=True)
-app=FastAPI(title='江西物流一张网',version='1.3.0')
+app=FastAPI(title='江西物流一张网',version='1.4.0')
 def db():
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row;return c
 def now():return datetime.now().isoformat(timespec='seconds')
@@ -44,19 +44,41 @@ with db() as c:
  # These records are clearly simulated and let the demo show that the network is not
  # limited to Jiangxi endpoints.
  national=[
-  ('DMD-GLOBAL-0001','JX-INT-0001','省际 / 全国','赣州铜材铁路干线至武汉','赣州国际陆港','武汉铁路物流中心','铁路运输','铜材',186,'国内铁路货运单证与班列时刻需由承运方确认。','武汉铁路物流中心','铁路'),
+  ('DMD-GLOBAL-0001','JX-INT-0001','省际 / 全国','南昌至武汉铁路干线运输','南昌站','武汉站','铁路运输','铜材',186,'省际铁路轨道规划示例；铁路货运受理、班列时刻、舱位及运价需由承运方确认。','','铁路'),
   ('DMD-GLOBAL-0002','JX-INT-0002','省际 / 全国','南昌冷链公路至广州白云','南昌向塘国际陆港','广州白云区','公路运输','冷链食品',42,'温控与货车通行安排需承运方确认。','','公路'),
   ('DMD-GLOBAL-0003','JX-INT-0003','国际 / 跨境','江西铜材出口至新加坡','九江港城西港区','Singapore Port','国际多式联运','铜材',520,'国际水运与口岸节点仅作路线计划示例；海外地名需核验，未接入港航实时数据。','洋山深水港,上海市,中国','公路,水路')]
+ national += [
+  ('DMD-GLOBAL-0004','JX-INT-0004','省际 / 全国','南昌至上海铁路联运','南昌站','上海虹桥站','铁路运输','电子产品',96,'跨省铁路轨道线路示例；班次、货运承接和运价需由铁路承运方确认。','','铁路'),
+  ('DMD-GLOBAL-0005','JX-INT-0005','省际 / 全国','上海至南昌返程铁路运单','上海虹桥站','南昌站','铁路运输','日用消费品',128,'跨省返程运单示例；班次、货运承接和运价需由铁路承运方确认。','','铁路'),
+  ('DMD-GLOBAL-0006','JX-INT-0006','省际 / 全国','九江至杭州冷链公路运单','九江港城西港区','杭州市','公路运输','冷链食品',26,'跨省公路运输需求示例，温控、车型及通行安排需承运方确认。','','公路'),
+  ('DMD-GLOBAL-0007','JX-INT-0007','省际 / 全国','赣州至深圳工业原料运输','赣州国际陆港','深圳市','公路运输','工业原料',74,'跨省公路运输需求示例，车型、时效和运价需承运方确认。','','公路'),
+  ('DMD-GLOBAL-0008','JX-INT-0008','省际 / 全国','南京至南昌回程运单','南京市','南昌向塘国际陆港','公路运输','包装材料',38,'省外货源回程运输示例，装卸条件和交付时限需承运方确认。','','公路')]
  for did,wid,scope,title,origin,destination,mode,cargo,weight,description,nodes,modes in national:
   if not c.execute('select 1 from records where id=?',(did,)).fetchone():
    base={'scope':scope,'title':title,'origin':origin,'destination':destination,'cargo':cargo,'weight':weight,'mode':mode,'routeNodes':nodes,'routeModes':modes,'company':'江西铜业物流','status':'待响应','price':0,'created':now(),'deadline':(datetime.now()+timedelta(days=18)).date().isoformat(),'description':description}
+   if did in ('DMD-GLOBAL-0001','DMD-GLOBAL-0004','DMD-GLOBAL-0005'):
+    coords={'南昌站':[115.912,28.665],'武汉站':[114.424,30.625],'上海虹桥站':[121.327,31.2]}
+    base['originCoords']=coords[origin];base['destinationCoords']=coords[destination];base['routeNodes']='';base['routeModes']='铁路'
    c.execute('insert into records values(?,?,?,?,1)',(did,'demands',json.dumps(base,ensure_ascii=False),'江西铜业物流'))
    way={**base,'title':title+' · 运输任务','status':'在途','progress':43,'eta':(datetime.now()+timedelta(hours=30)).isoformat(timespec='minutes'),'sourceId':'EXT-'+wid}
    c.execute('insert into records values(?,?,?,?,1)',(wid,'waybills',json.dumps(way,ensure_ascii=False),'江西铜业物流'))
+ # Refresh the original nationwide rail sample on already-initialized databases too.
+ rail_coords={'南昌站':[115.912,28.665],'武汉站':[114.424,30.625]}
+ for rid in ('DMD-GLOBAL-0001','JX-INT-0001'):
+  row=c.execute('select data from records where id=?',(rid,)).fetchone()
+  if row:
+   sample=json.loads(row['data']);sample.update({'scope':'省际 / 全国','title':'南昌至武汉铁路干线运输'+(' · 运输任务' if rid=='JX-INT-0001' else ''),'origin':'南昌站','destination':'武汉站','mode':'铁路运输','routeNodes':'','routeModes':'铁路','originCoords':rail_coords['南昌站'],'destinationCoords':rail_coords['武汉站'],'description':'省际铁路轨道规划示例；铁路货运受理、班列时刻、舱位及运价需由承运方确认。'})
+   c.execute('update records set data=? where id=?',(json.dumps(sample,ensure_ascii=False),rid))
+ for did,wid in [('DMD-GLOBAL-0004','JX-INT-0004'),('DMD-GLOBAL-0005','JX-INT-0005')]:
+  for rid in (did,wid):
+   row=c.execute('select data from records where id=?',(rid,)).fetchone()
+   if row:
+    sample=json.loads(row['data']);sample.update({'originCoords':{'南昌站':[115.912,28.665],'上海虹桥站':[121.327,31.2]}[sample['origin']],'destinationCoords':{'南昌站':[115.912,28.665],'上海虹桥站':[121.327,31.2]}[sample['destination']],'routeNodes':'','routeModes':'铁路'})
+    c.execute('update records set data=? where id=?',(json.dumps(sample,ensure_ascii=False),rid))
  for rid in ('DMD-GLOBAL-0003','JX-INT-0003'):
   row=c.execute('select data from records where id=?',(rid,)).fetchone()
   if row:
-   sample=json.loads(row['data']);sample['routeNodes']='洋山深水港,上海市,中国';sample['routeModes']='公路,水路'
+   sample=json.loads(row['data']);sample['routeNodes']='洋山深水港[121.99,30.62]';sample['destinationCoords']=[103.82,1.26];sample['routeModes']='公路,水路'
    c.execute('update records set data=? where id=?',(json.dumps(sample,ensure_ascii=False),rid))
 def user(req):
  token=req.cookies.get('jx_session','')
@@ -68,7 +90,7 @@ def visible(u,r):return u['role']=='admin' or r['owner'] in (u['company'],'publi
 def record(r):return {'id':r['id'],'kind':r['kind'],'version':r['version'],**json.loads(r['data'])}
 KINDS={'demands','resources','waybills','policies','alerts','interfaces','tickets'}
 @app.get('/health')
-def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.3.0','routeDetails':True,'realRoadRouting':True}
+def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.4.0','routeDetails':True,'realRoadRouting':True,'realRailTrackRouting':True,'seaRoutingConfigured':bool(os.getenv('SEAROUTES_API_KEY'))}
 @app.post('/api/login')
 async def login(req:Request):
  ip=req.client.host if req.client else 'unknown';attempts=LOGIN_ATTEMPTS.setdefault(ip,[]);attempts[:]=[t for t in attempts if time.time()-t<60]
@@ -89,7 +111,7 @@ def me(req:Request):
  u=user(req);return {k:u[k] for k in ['name','role','company']}
 @app.get('/api/config')
 def config(req:Request):
- user(req);return {'amapKey':os.getenv('AMAP_WEB_KEY',''),'amapSecurityCode':os.getenv('AMAP_SECURITY_CODE',''),'amapRoadConfigured':bool(os.getenv('AMAP_WEB_SERVICE_KEY')),'simulation':True,'persistentStorage':bool(os.getenv('DATA_DIR'))}
+ user(req);return {'amapKey':os.getenv('AMAP_WEB_KEY',''),'amapSecurityCode':os.getenv('AMAP_SECURITY_CODE',''),'amapRoadConfigured':bool(os.getenv('AMAP_WEB_SERVICE_KEY')),'railRoutingConfigured':True,'waterRoutingConfigured':bool(os.getenv('SEAROUTES_API_KEY')),'simulation':True,'persistentStorage':bool(os.getenv('DATA_DIR'))}
 @app.get('/api/modules')
 def modules(req:Request):
  user(req);return json.loads((BASE/'modules.json').read_text())
