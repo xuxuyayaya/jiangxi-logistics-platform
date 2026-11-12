@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 BASE=Path(__file__).parent
 LOGIN_ATTEMPTS={}
 DB=Path(os.getenv('DATA_DIR',str(BASE/'data')))/'platform.sqlite';DB.parent.mkdir(parents=True,exist_ok=True)
-app=FastAPI(title='江西物流一张网',version='1.5.0')
+app=FastAPI(title='江西物流一张网',version='1.6.0')
 def db():
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row;return c
 def now():return datetime.now().isoformat(timespec='seconds')
@@ -80,6 +80,11 @@ with db() as c:
   if row:
    sample=json.loads(row['data']);sample['routeNodes']='洋山深水港[121.99,30.62]';sample['destinationCoords']=[103.82,1.26];sample['routeModes']='公路,水路'
    c.execute('update records set data=? where id=?',(json.dumps(sample,ensure_ascii=False),rid))
+ # Explicit example itinerary; these stations are declared sample business nodes, never inferred transfers.
+ for rid,kind in [('DMD-MULTI-0001','demands'),('JX-MULTI-0001','waybills')]:
+  if not c.execute('select 1 from records where id=?',(rid,)).fetchone():
+   d={'title':'南昌至上海公铁联运（分段线路示例）','origin':'南昌向塘国际陆港','destination':'上海港','routeNodes':'南昌站[115.912,28.665];上海虹桥站[121.327,31.2]','routeModes':'公路,铁路,公路','mode':'公铁联运','scope':'跨省 / 全国','cargo':'电子产品','weight':20,'company':'江西铜业物流','status':'在途' if kind=='waybills' else '待响应','progress':40,'created':now(),'description':'模拟运单，节点为明确指定的线路查询样例；铁路为轨道规划参考，不代表货运受理或班列任务。'}
+   c.execute('insert into records values(?,?,?,?,1)',(rid,kind,json.dumps(d,ensure_ascii=False),'江西铜业物流'))
  # Normalize demo supply fields so matching never confuses warehouse area with transport tonnage.
  for row in c.execute('select id,data from records where kind="resources"').fetchall():
   d=json.loads(row['data']);kind=d.get('mode','');is_transport=kind in ('车船运力','普通货车','冷藏车','冷藏车运力','铁路运力','船舶运力') or d.get('resourceCategory')=='transport'
@@ -107,7 +112,7 @@ def visible(u,r):return u['role']=='admin' or r['owner'] in (u['company'],'publi
 def record(r):return {'id':r['id'],'kind':r['kind'],'version':r['version'],**json.loads(r['data'])}
 KINDS={'demands','resources','waybills','policies','alerts','interfaces','tickets'}
 @app.get('/health')
-def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.5.0','routeDetails':True,'realRoadRouting':True,'realRailTrackRouting':True,'seaRoutingConfigured':bool(os.getenv('SEAROUTES_API_KEY'))}
+def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'1.6.0','routeDetails':True,'realRoadRouting':True,'realRailTrackRouting':True,'seaRoutingConfigured':bool(os.getenv('SEAROUTES_API_KEY'))}
 @app.post('/api/login')
 async def login(req:Request):
  ip=req.client.host if req.client else 'unknown';attempts=LOGIN_ATTEMPTS.setdefault(ip,[]);attempts[:]=[t for t in attempts if time.time()-t<60]
@@ -203,13 +208,29 @@ async def plans(req:Request):
  try:w=float(x.get('weight',100))
  except (ValueError,TypeError):raise HTTPException(422,'重量格式错误')
  if not math.isfinite(w) or w<=0:raise HTTPException(422,'重量必须大于零')
- from route_service import NODES
- from real_routes import geocode_place,route_road
- a=list(NODES[x['origin']]) if x['origin'] in NODES else geocode_place(x['origin'])
- b=list(NODES[x['destination']]) if x['destination'] in NODES else geocode_place(x['destination'])
- if not a or not b:raise HTTPException(422,'起讫地未能定位，请填写明确的城市、地址或港口名称')
- q=route_road(a,b)
- return {'simulation':False,'plans':[{'id':'ROAD-PLAN','name':'高德道路路径','mode':'公路运输','origin':x['origin'],'destination':x['destination'],'segments':[x['origin'],x['destination']],**q}],'notice':'铁路、水运与多式联运需填写实际站港节点和运输段后逐段查询。'}
+ from route_service import build_route,parse_user_point
+ from real_routes import apply_real_routes
+ legs=x.get('legs') or [{'from':x['origin'],'to':x['destination'],'mode':'公路'}]
+ if not isinstance(legs,list) or not 1<=len(legs)<=8:raise HTTPException(422,'请填写1至8个连续运输段')
+ for i,leg in enumerate(legs):
+  if not isinstance(leg,dict) or leg.get('mode') not in ('公路','铁路','水运'):raise HTTPException(422,'运输方式请选择公路、铁路或水运')
+  if not str(leg.get('from','')).strip() or not str(leg.get('to','')).strip():raise HTTPException(422,'每段起讫节点不能为空')
+  if leg['from']==leg['to']:raise HTTPException(422,'同一运输段的起讫节点不能相同')
+  if i and legs[i-1]['to']!=leg['from']:raise HTTPException(422,'运输段必须连续，上一段终点须与下一段起点一致')
+ def endpoint(value):
+  coord=parse_user_point(value);name=re.sub(r'\s*\[[^]]+\]','',value).strip();return name,coord
+ origin,oc=endpoint(legs[0]['from']);destination,dc=endpoint(legs[-1]['to'])
+ if x.get('plannedDeparture') and x.get('requiredArrival') and x['plannedDeparture']>x['requiredArrival']:raise HTTPException(422,'要求到达日期不能早于计划发运日期')
+ order={'id':'QUERY-PLAN','origin':origin,'destination':destination,'weight':w,'mode':'多式联运' if len(legs)>1 else legs[0]['mode'],'routeModes':','.join(l['mode'] for l in legs),'routeNodes':';'.join(l['to'] for l in legs[:-1]),'title':'联运链路查询','created':now()}
+ order.update({k:x.get(k) for k in ('loadType','plannedDeparture','requiredArrival') if x.get(k)})
+ if oc:order['originCoords']=oc
+ if dc:order['destinationCoords']=dc
+ route=apply_real_routes(build_route(order,'demands'));route['name']='指定联运链路' if len(legs)>1 else '指定运输路线'
+ routes=[route]
+ if x.get('compareRoad') and (len(legs)>1 or legs[0]['mode']!='公路'):
+  road={**order,'id':'QUERY-ROAD','routeNodes':'','routeModes':'公路','mode':'公路运输'}
+  base=apply_real_routes(build_route(road,'demands'));base['name']='公路直达基准';routes.append(base)
+ return {'plans':routes,'orderTemplate':{k:v for k,v in order.items() if k not in ('id','created')},'notice':'路径几何为线路服务规划结果。承运班次、运价、舱位、货车限制和实际轨迹须分别核实；未返回线路的运输段单独显示原因。'}
 
 @app.get('/api/export/{kind}')
 def export(kind:str,req:Request):

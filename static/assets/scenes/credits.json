@@ -1,0 +1,50 @@
+{
+  "gan-nan-orange": {
+    "title": "File:NAVEL ORANGE.png",
+    "url": "https://upload.wikimedia.org/wikipedia/commons/8/85/NAVEL_ORANGE.png?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail_unscaled",
+    "source": "https://commons.wikimedia.org/wiki/File:NAVEL_ORANGE.png",
+    "license": "CC BY 4.0",
+    "artist": "ILikeMangos999",
+    "path": "/static/assets/scenes/gan-nan-orange.jpg"
+  },
+  "nanfeng-tangerine": {
+    "title": "File:Mandarin Oranges (Citrus Reticulata).jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/49/Mandarin_Oranges_%28Citrus_Reticulata%29.jpg/960px-Mandarin_Oranges_%28Citrus_Reticulata%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "source": "https://commons.wikimedia.org/wiki/File:Mandarin_Oranges_(Citrus_Reticulata).jpg",
+    "license": "CC BY-SA 3.0",
+    "artist": "Joe Ravi",
+    "path": "/static/assets/scenes/nanfeng-tangerine.jpg"
+  },
+  "nankang-furniture": {
+    "title": "File:Sofa MET 1999.396.jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e8/Sofa_MET_1999.396.jpg/960px-Sofa_MET_1999.396.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "source": "https://commons.wikimedia.org/wiki/File:Sofa_MET_1999.396.jpg",
+    "license": "CC0",
+    "artist": "John Henry Belter",
+    "path": "/static/assets/scenes/nankang-furniture.jpg"
+  },
+  "bulk-metals": {
+    "title": "File:Copper cathode UMMCII Uralelectromed.jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/8d/Copper_cathode_UMMCII_Uralelectromed.jpg/960px-Copper_cathode_UMMCII_Uralelectromed.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "source": "https://commons.wikimedia.org/wiki/File:Copper_cathode_UMMCII_Uralelectromed.jpg",
+    "license": "CC BY-SA 4.0",
+    "artist": "Niklitov",
+    "path": "/static/assets/scenes/bulk-metals.jpg"
+  },
+  "grain-oil": {
+    "title": "File:Rice grains (IRRI).jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/ba/Rice_grains_%28IRRI%29.jpg/960px-Rice_grains_%28IRRI%29.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "source": "https://commons.wikimedia.org/wiki/File:Rice_grains_(IRRI).jpg",
+    "license": "CC BY 2.0",
+    "artist": "IRRI Images",
+    "path": "/static/assets/scenes/grain-oil.jpg"
+  },
+  "electronics-battery": {
+    "title": "File:Photovoltaic Panels at the Travers Solar Farm.jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e2/Photovoltaic_Panels_at_the_Travers_Solar_Farm.jpg/960px-Photovoltaic_Panels_at_the_Travers_Solar_Farm.jpg?utm_source=commons.wikimedia.org&utm_campaign=imageinfo&utm_content=thumbnail",
+    "source": "https://commons.wikimedia.org/wiki/File:Photovoltaic_Panels_at_the_Travers_Solar_Farm.jpg",
+    "license": "CC BY 4.0",
+    "artist": "Kkiefuik\n\n This photo was taken with Canon EOS Rebel T5i",
+    "path": "/static/assets/scenes/electronics-battery.jpg"
+  }
+}
