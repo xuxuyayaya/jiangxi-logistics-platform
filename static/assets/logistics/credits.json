@@ -1,0 +1,42 @@
+{
+  "port-terminal.jpg": {
+    "title": "File:Container-Terminal Bremerhaven 04.jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/80/Container-Terminal_Bremerhaven_04.jpg/1280px-Container-Terminal_Bremerhaven_04.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Container-Terminal_Bremerhaven_04.jpg",
+    "artist": "H. Zell",
+    "license": "CC BY-SA 3.0",
+    "path": "/static/assets/logistics/port-terminal.jpg"
+  },
+  "freight-train.jpg": {
+    "title": "File:DB Cargo freight train at Hedehusene Station 08.jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/c7/DB_Cargo_freight_train_at_Hedehusene_Station_08.jpg/1280px-DB_Cargo_freight_train_at_Hedehusene_Station_08.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:DB_Cargo_freight_train_at_Hedehusene_Station_08.jpg",
+    "artist": "Leif Jørgensen",
+    "license": "CC BY-SA 4.0",
+    "path": "/static/assets/logistics/freight-train.jpg"
+  },
+  "cold-warehouse.jpg": {
+    "title": "File:Automatisches Kleinteilelager Kühllager.jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/19/Automatisches_Kleinteilelager_K%C3%BChllager.jpg/1280px-Automatisches_Kleinteilelager_K%C3%BChllager.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Automatisches_Kleinteilelager_K%C3%BChllager.jpg",
+    "artist": "Gilgen Logistics AG",
+    "license": "CC BY-SA 4.0",
+    "path": "/static/assets/logistics/cold-warehouse.jpg"
+  },
+  "freight-truck.jpg": {
+    "title": "File:Freight truck as seen on highway.jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/50/Freight_truck_as_seen_on_highway.jpg/1280px-Freight_truck_as_seen_on_highway.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Freight_truck_as_seen_on_highway.jpg",
+    "artist": "Soulful sunshine",
+    "license": "CC BY-SA 4.0",
+    "path": "/static/assets/logistics/freight-truck.jpg"
+  },
+  "port-hero.jpg": {
+    "title": "File:Container-Terminal Bremerhaven 02.jpg",
+    "url": "https://thumb.wikimedia.org/wikipedia/commons/thumb/f/f3/Container-Terminal_Bremerhaven_02.jpg/1920px-Container-Terminal_Bremerhaven_02.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Container-Terminal_Bremerhaven_02.jpg",
+    "artist": "H. Zell",
+    "license": "CC BY-SA 3.0",
+    "path": "/static/assets/logistics/port-hero.jpg"
+  }
+}
