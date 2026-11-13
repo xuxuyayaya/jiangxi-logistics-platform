@@ -26,4 +26,17 @@ class PlannerTests(unittest.TestCase):
   r=self.solve('未知地区')['plans'][0];self.assertIsNone(r['quote']['total']);self.assertFalse(r['routeReady'])
  def test_manual_leg_preserved(self):
   legs=[{'from':'南昌市','to':'上海市','mode':'公路'}];x={'origin':'南昌市','destination':'上海市','weight':20,'legs':legs};self.assertEqual(p.recommend_sets(x,[legs])[0],[legs])
+class WaterPlanningTests(unittest.TestCase):
+ def setUp(self):
+  self.locations={'天津市':[117.2,39.12],'大连市':[121.61,38.91],'九江市':[115.99,29.71],'天津港':[117.75,38.99],'大连港大窑湾港区':[121.89,38.99],'上海外高桥港区':[121.59,31.35],'上海市':[121.47,31.23]}
+  for q in [patch.object(p,'geocode_place',side_effect=self.locations.get),patch.object(real_routes,'geocode_place',side_effect=self.locations.get),patch.object(real_routes,'route_road',side_effect=route)]:q.start();self.addCleanup(q.stop)
+ def solve(self,a,b):
+  return p.solve({'origin':a,'destination':b,'weight':20,'objective':'cheapest'},[[{'from':a,'to':b,'mode':m}] for m in ['公路','水运']])
+ def test_tianjin_dalian_coastal_candidate(self):
+  r=self.solve('天津市','大连市')['plans'][1];water=[s for s in r['segments'] if s['mode']=='水运'];self.assertEqual(len(water),1);self.assertEqual((water[0]['from'],water[0]['to']),('天津港','大连港大窑湾港区'));self.assertEqual(water[0]['serviceType'],'沿海运输');self.assertIn('候选',r['recommendation']);self.assertFalse(r['routeReady']);self.assertEqual(water[0]['geometry'],[])
+ def test_jiujiang_dalian_yangtze_gateway(self):
+  for a,b,ports in [('九江市','大连市',['九江港城西港区','上海外高桥港区','大连港大窑湾港区']),('大连市','九江市',['大连港大窑湾港区','上海外高桥港区','九江港城西港区'])]:
+   r=self.solve(a,b)['plans'][1];water=[s for s in r['segments'] if s['mode']=='水运'];self.assertEqual([water[0]['from']]+[s['to'] for s in water],ports);self.assertEqual(len(water),2);self.assertAlmostEqual(r['quote']['total'],sum(s['quote']['total'] for s in r['segments']),2);self.assertIn('上海中转',r['name']);self.assertTrue(all(s['routeQuery']['state']=='schematic' for s in water))
+ def test_shanghai_not_inserted_twice(self):
+  r=self.solve('九江市','上海市')['plans'][1];self.assertEqual(len([s for s in r['segments'] if s['mode']=='水运']),1)
 if __name__=='__main__':unittest.main()

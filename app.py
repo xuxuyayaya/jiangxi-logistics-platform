@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 BASE=Path(__file__).parent
 LOGIN_ATTEMPTS={}
 DB=Path(os.getenv('DATA_DIR',str(BASE/'data')))/'platform.sqlite';DB.parent.mkdir(parents=True,exist_ok=True)
-app=FastAPI(title='江西物流一张网',version='2.3.0')
+app=FastAPI(title='江西物流一张网',version='2.3.1')
 def db():
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row;return c
 def now():return datetime.now().isoformat(timespec='seconds')
@@ -116,7 +116,7 @@ def visible(u,r):return u['role']=='admin' or r['owner'] in (u['company'],'publi
 def record(r):return {'id':r['id'],'kind':r['kind'],'version':r['version'],**json.loads(r['data'])}
 KINDS={'demands','resources','waybills','policies','alerts','interfaces','tickets'}
 @app.get('/health')
-def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'2.3.0','routeDetails':True,'realRoadRouting':True,'realRailTrackRouting':True,'seaRoutingConfigured':False,'seaRoutingMode':'port_sketch_only'}
+def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'2.3.1','routeDetails':True,'realRoadRouting':True,'realRailTrackRouting':True,'seaRoutingConfigured':False,'seaRoutingMode':'port_sketch_only'}
 @app.post('/api/login')
 async def login(req:Request):
  ip=req.client.host if req.client else 'unknown';attempts=LOGIN_ATTEMPTS.setdefault(ip,[]);attempts[:]=[t for t in attempts if time.time()-t<60]
@@ -229,7 +229,7 @@ async def plans(req:Request):
   if clean_location(legs[0]['from'])!=clean_location(x['origin']) or clean_location(legs[-1]['to'])!=clean_location(x['destination']):raise HTTPException(422,'首段起点和末段终点须与上方起讫地点一致')
   mode_sets=[legs]
  else:
-  requested=x.get('modes') or ['公路']
+  requested=x.get('modes') or ['公路','铁路','水运']
   if not isinstance(requested,list) or not requested or any(m not in ('公路','铁路','水运') for m in requested):raise HTTPException(422,'请至少选择公路、铁路或水运，可同时比较多种方式')
   if len(set(requested))!=len(requested):raise HTTPException(422,'运输方式不能重复')
   mode_sets=[[{'from':str(x['origin']).strip(),'to':str(x['destination']).strip(),'mode':m}] for m in requested]
