@@ -1,0 +1,65 @@
+{
+  "warehouse": {
+    "path": "/static/assets/library/warehouse.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Modern_warehouse_with_pallet_rack_storage_system.jpg",
+    "artist": "Axisadman",
+    "license": "CC BY-SA 3.0",
+    "title": "File:Modern warehouse with pallet rack storage system.jpg"
+  },
+  "cold-truck": {
+    "path": "/static/assets/library/cold-truck.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Refrigerated_Chang%27an_Star_Truck_at_Fengshuo_East_Rd_(20210903092322).jpg",
+    "artist": "N509FZ",
+    "license": "CC BY-SA 4.0",
+    "title": "File:Refrigerated Chang'an Star Truck at Fengshuo East Rd (20210903092322).jpg"
+  },
+  "furniture": {
+    "path": "/static/assets/library/furniture.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Showroom_Furniture_Tempat_Tidur_dan_Sofa_Modern.jpg",
+    "artist": "OKINURPIHATINI",
+    "license": "CC0",
+    "title": "File:Showroom Furniture Tempat Tidur dan Sofa Modern.jpg"
+  },
+  "port": {
+    "path": "/static/assets/library/port.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Shanghai-Yangshan-Port-Containers2013-01.JPG",
+    "artist": "Bruno Corpet (Quoique)",
+    "license": "CC BY-SA 3.0",
+    "title": "File:Shanghai-Yangshan-Port-Containers2013-01.JPG"
+  },
+  "handling": {
+    "path": "/static/assets/library/handling.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Container_loading_with_forklift_at_warehouse_in_Thailand.jpg",
+    "artist": "Goterrestrial",
+    "license": "CC BY 4.0",
+    "title": "File:Container loading with forklift at warehouse in Thailand.jpg"
+  },
+  "silo": {
+    "path": "/static/assets/library/silo.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Gifford,_IL_silo_and_grain_elevator.jpg",
+    "artist": "TheTechnician27",
+    "license": "CC0",
+    "title": "File:Gifford, IL silo and grain elevator.jpg"
+  },
+  "electronics": {
+    "path": "/static/assets/library/electronics.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Printed_Circuit_Board_2.jpg",
+    "artist": "Balurbala",
+    "license": "CC BY-SA 3.0",
+    "title": "File:Printed Circuit Board 2.jpg"
+  },
+  "road-truck": {
+    "path": "/static/assets/library/road-truck.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:Volvo_Truck_FH-Semi-trailer_truck-01ASD.jpg",
+    "artist": "Asurnipal",
+    "license": "CC BY-SA 4.0",
+    "title": "File:Volvo Truck FH-Semi-trailer truck-01ASD.jpg"
+  },
+  "refrigerated-truck": {
+    "path": "/static/assets/library/refrigerated-truck.jpg",
+    "source": "https://commons.wikimedia.org/wiki/File:FAW_Jiefang_J6L_001.jpg",
+    "artist": "Elizbeth smith",
+    "license": "CC BY-SA 4.0",
+    "title": "File:FAW Jiefang J6L 001.jpg"
+  }
+}
