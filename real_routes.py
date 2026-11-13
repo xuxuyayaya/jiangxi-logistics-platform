@@ -1,5 +1,5 @@
 """Provider-backed road, mapped rail and maritime routing. Never invent geometry."""
-import os,json,urllib.request,urllib.parse,time,math
+import os,json,urllib.request,urllib.parse,time,math,threading
 CACHE={}
 GEOCODE_CACHE={}
 RAIL_CACHE={}
@@ -26,7 +26,7 @@ def gcj02_to_wgs84(point):
  for _ in range(3):
   projected=transform(*guess);guess=[guess[0]+lon-projected[0],guess[1]+lat-projected[1]]
  return guess
-def geocode_place(name):
+def _geocode_place(name):
  """Resolve user-entered national/international endpoint names when Gaode can locate them."""
  key=os.getenv('AMAP_WEB_SERVICE_KEY','')
  if not key:return None
@@ -40,6 +40,7 @@ def geocode_place(name):
   if len(parts)>1:addresses.insert(0,parts[0])
   if '洋山' in name:addresses.extend(['洋山深水港','上海洋山港'])
   city=parts[1] if len(parts)>1 else ('上海市' if '洋山' in name or name=='上海港' else '')
+  city=next((n+'市' for n in ('天津','大连','九江','南昌','赣州','上海','武汉','长沙','广州','深圳','成都','重庆','西安','郑州','昆明','沈阳','长春','哈尔滨','济南','乌鲁木齐','兰州','南宁','贵阳','合肥','宁波','南京','青岛','营口','烟台','日照','连云港','福州','厦门','湛江','海口') if name.startswith(n)),city)
   point=None
   for address in dict.fromkeys(addresses):
    query={'key':key,'address':address,'output':'JSON'}
@@ -47,9 +48,23 @@ def geocode_place(name):
    with urllib.request.urlopen('https://restapi.amap.com/v3/geocode/geo?'+urllib.parse.urlencode(query),timeout=8) as res:data=json.load(res)
    geo=data.get('geocodes',[{}])[0].get('location') if data.get('status')=='1' and data.get('geocodes') else None
    if geo:point=gcj02_to_wgs84(list(map(float,geo.split(','))));break
-  GEOCODE_CACHE[name]=(time.time(),point)
+  if point:GEOCODE_CACHE[name]=(time.time(),point)
   return point
  except Exception:return None
+GEOCODE_LOCK=threading.Lock()
+GEOCODE_LAST=0
+def geocode_place(name):
+ """Serialize geocoding, cache successes, and avoid QPS bursts in parallel plans."""
+ global GEOCODE_LAST
+ hit=GEOCODE_CACHE.get(name)
+ if hit and hit[1] and time.time()-hit[0]<86400:return hit[1]
+ with GEOCODE_LOCK:
+  hit=GEOCODE_CACHE.get(name)
+  if hit and hit[1] and time.time()-hit[0]<86400:return hit[1]
+  time.sleep(max(0,.36-(time.monotonic()-GEOCODE_LAST)))
+  try:return _geocode_place(name)
+  finally:GEOCODE_LAST=time.monotonic()
+
 def route_road(a,b):
  key=os.getenv('AMAP_WEB_SERVICE_KEY','')
  if not key:return {'state':'key_required','message':'尚未配置高德Web服务Key（AMAP_WEB_SERVICE_KEY），不能查询真实道路路线。'}

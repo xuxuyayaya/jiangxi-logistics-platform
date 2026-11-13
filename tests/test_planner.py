@@ -14,16 +14,24 @@ class PlannerTests(unittest.TestCase):
   sets=[[{'from':x['origin'],'to':dest,'mode':m}] for m in ['公路','铁路']]
   return p.solve(x,sets)
  def test_auto_nodes_prices_and_endpoint_change(self):
-  a=self.solve();rail=a['plans'][1];self.assertEqual([s['mode'] for s in rail['segments']],['公路','铁路','公路']);self.assertEqual(rail['points'][1]['name'],'南昌向塘国际陆港');self.assertEqual(rail['points'][-2]['name'],'上海芦潮港铁路集装箱中心站')
+  a=self.solve();rail=next(r for r in a['plans'] if r['name']=='公铁联运');self.assertEqual([s['mode'] for s in rail['segments']],['公路','铁路','公路']);self.assertEqual(rail['points'][1]['name'],'南昌向塘国际陆港');self.assertEqual(rail['points'][-2]['name'],'上海芦潮港铁路集装箱中心站')
   for r in a['plans']:
    self.assertAlmostEqual(r['quote']['total'],sum(s['quote']['total'] for s in r['segments']),places=2)
    self.assertTrue(all('演示公司' in s['carrier'] for s in r['segments']))
-  b=self.solve('深圳市');self.assertEqual(b['plans'][1]['points'][-2]['name'],'深圳平湖南铁路货场');self.assertNotEqual(a['plans'][0]['quote']['total'],b['plans'][0]['quote']['total']);self.assertGreater(self.solve(weight=40)['plans'][0]['quote']['total'],a['plans'][0]['quote']['total'])
+  b=self.solve('深圳市');self.assertEqual(next(r for r in b['plans'] if r['name']=='公铁联运')['points'][-2]['name'],'深圳平湖南铁路货场');self.assertNotEqual(next(r for r in a['plans'] if r['name']=='公路直达')['quote']['total'],next(r for r in b['plans'] if r['name']=='公路直达')['quote']['total']);self.assertGreater(next(r for r in self.solve(weight=40)['plans'] if r['name']=='公路直达')['quote']['total'],next(r for r in a['plans'] if r['name']=='公路直达')['quote']['total'])
  def test_missing_path_no_fabricated_geometry(self):
   with patch.object(real_routes,'route_rail',return_value={'state':'no_route','message':'no coverage'}):
-   r=self.solve()['plans'][1];self.assertFalse(r['routeReady']);self.assertEqual(r['segments'][1]['geometry'],[]);self.assertIsNotNone(r['quote']['total']);self.assertIn('估算',r['segments'][1]['quote']['distanceSource'])
+   r=next(r for r in self.solve()['plans'] if r['name']=='公铁联运');self.assertFalse(r['routeReady']);self.assertEqual(r['segments'][1]['geometry'],[]);self.assertIsNotNone(r['quote']['total']);self.assertIn('估算',r['segments'][1]['quote']['distanceSource'])
  def test_unknown_location_no_price(self):
-  r=self.solve('未知地区')['plans'][0];self.assertIsNone(r['quote']['total']);self.assertFalse(r['routeReady'])
+  r=next(r for r in self.solve('未知地区')['plans'] if r['name']=='公路直达');self.assertIsNone(r['quote']['total']);self.assertFalse(r['routeReady'])
+ def test_default_prefers_intermodal_even_when_road_cheaper(self):
+  original=p.commercial
+  def price(r,x):
+   r=original(r,x);r['quote']['total']=1000 if r['intermodalCandidate'] else 100;return r
+  x={'origin':'南昌市','destination':'上海市','weight':20}
+  with patch.object(p,'commercial',side_effect=price):
+   result=p.solve(x,[[{'from':x['origin'],'to':x['destination'],'mode':m}] for m in ['公路','铁路']])
+  self.assertTrue(result['plans'][0]['intermodalCandidate']);self.assertEqual(result['plans'][0]['recommendation'],'联运优先推荐')
  def test_manual_leg_preserved(self):
   legs=[{'from':'南昌市','to':'上海市','mode':'公路'}];x={'origin':'南昌市','destination':'上海市','weight':20,'legs':legs};self.assertEqual(p.recommend_sets(x,[legs])[0],[legs])
 class WaterPlanningTests(unittest.TestCase):
@@ -33,10 +41,15 @@ class WaterPlanningTests(unittest.TestCase):
  def solve(self,a,b):
   return p.solve({'origin':a,'destination':b,'weight':20,'objective':'cheapest'},[[{'from':a,'to':b,'mode':m}] for m in ['公路','水运']])
  def test_tianjin_dalian_coastal_candidate(self):
-  r=self.solve('天津市','大连市')['plans'][1];water=[s for s in r['segments'] if s['mode']=='水运'];self.assertEqual(len(water),1);self.assertEqual((water[0]['from'],water[0]['to']),('天津港','大连港大窑湾港区'));self.assertEqual(water[0]['serviceType'],'沿海运输');self.assertIn('候选',r['recommendation']);self.assertFalse(r['routeReady']);self.assertEqual(water[0]['geometry'],[])
+  r=next(r for r in self.solve('天津市','大连市')['plans'] if r['waterCandidate']);water=[s for s in r['segments'] if s['mode']=='水运'];self.assertEqual(len(water),1);self.assertEqual((water[0]['from'],water[0]['to']),('天津港','大连港大窑湾港区'));self.assertEqual(water[0]['serviceType'],'沿海运输');self.assertIn('候选',r['recommendation']);self.assertFalse(r['routeReady']);self.assertEqual(water[0]['geometry'],[])
  def test_jiujiang_dalian_yangtze_gateway(self):
   for a,b,ports in [('九江市','大连市',['九江港城西港区','上海外高桥港区','大连港大窑湾港区']),('大连市','九江市',['大连港大窑湾港区','上海外高桥港区','九江港城西港区'])]:
-   r=self.solve(a,b)['plans'][1];water=[s for s in r['segments'] if s['mode']=='水运'];self.assertEqual([water[0]['from']]+[s['to'] for s in water],ports);self.assertEqual(len(water),2);self.assertAlmostEqual(r['quote']['total'],sum(s['quote']['total'] for s in r['segments']),2);self.assertIn('上海中转',r['name']);self.assertTrue(all(s['routeQuery']['state']=='schematic' for s in water))
+   r=next(r for r in self.solve(a,b)['plans'] if r['waterCandidate']);water=[s for s in r['segments'] if s['mode']=='水运'];self.assertEqual([water[0]['from']]+[s['to'] for s in water],ports);self.assertEqual(len(water),2);self.assertAlmostEqual(r['quote']['total'],sum(s['quote']['total'] for s in r['segments']),2);self.assertIn('上海中转',r['name']);self.assertTrue(all(s['routeQuery']['state']=='schematic' for s in water))
+ def test_wrong_region_port_is_rejected(self):
+  self.locations['天津港']=[87.6,43.8]
+  r=self.solve('天津市','大连市')
+  self.assertTrue(any('定位未完成' in n for n in r['planningNotes']))
+  self.assertFalse(any(pnt['name']=='天津港' for plan in r['plans'] for pnt in plan['points']))
  def test_shanghai_not_inserted_twice(self):
-  r=self.solve('九江市','上海市')['plans'][1];self.assertEqual(len([s for s in r['segments'] if s['mode']=='水运']),1)
+  r=next(r for r in self.solve('九江市','上海市')['plans'] if r['waterCandidate']);self.assertEqual(len([s for s in r['segments'] if s['mode']=='水运']),1)
 if __name__=='__main__':unittest.main()
