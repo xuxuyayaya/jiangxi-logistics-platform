@@ -7,7 +7,7 @@ from fastapi.staticfiles import StaticFiles
 BASE=Path(__file__).parent
 LOGIN_ATTEMPTS={}
 DB=Path(os.getenv('DATA_DIR',str(BASE/'data')))/'platform.sqlite';DB.parent.mkdir(parents=True,exist_ok=True)
-app=FastAPI(title='江西物流一张网',version='2.2.0')
+app=FastAPI(title='江西物流一张网',version='2.3.0')
 def db():
  c=sqlite3.connect(DB);c.row_factory=sqlite3.Row;return c
 def now():return datetime.now().isoformat(timespec='seconds')
@@ -116,7 +116,7 @@ def visible(u,r):return u['role']=='admin' or r['owner'] in (u['company'],'publi
 def record(r):return {'id':r['id'],'kind':r['kind'],'version':r['version'],**json.loads(r['data'])}
 KINDS={'demands','resources','waybills','policies','alerts','interfaces','tickets'}
 @app.get('/health')
-def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'2.2.0','routeDetails':True,'realRoadRouting':True,'realRailTrackRouting':True,'seaRoutingConfigured':False,'seaRoutingMode':'port_sketch_only'}
+def health():return {'status':'ok','database':'sqlite','mode':'simulation','version':'2.3.0','routeDetails':True,'realRoadRouting':True,'realRailTrackRouting':True,'seaRoutingConfigured':False,'seaRoutingMode':'port_sketch_only'}
 @app.post('/api/login')
 async def login(req:Request):
  ip=req.client.host if req.client else 'unknown';attempts=LOGIN_ATTEMPTS.setdefault(ip,[]);attempts[:]=[t for t in attempts if time.time()-t<60]
@@ -216,8 +216,6 @@ async def plans(req:Request):
   try:budget=float(x['budget'])
   except (ValueError,TypeError):raise HTTPException(422,'预算格式错误')
   if not math.isfinite(budget) or budget<0:raise HTTPException(422,'预算不能为负数')
- from route_service import build_route,parse_user_point
- from real_routes import apply_real_routes
  legs=x.get('legs') or []
  if not isinstance(legs,list) or len(legs)>8:raise HTTPException(422,'最多可配置8个连续运输段')
  if legs:
@@ -238,21 +236,10 @@ async def plans(req:Request):
  def endpoint(value):
   value=str(value).strip();coord=parse_user_point(value);name=re.sub(r'\s*\[[^]]+\]','',value).strip();return name,coord
  if x.get('plannedDeparture') and x.get('requiredArrival') and x['plannedDeparture']>x['requiredArrival']:raise HTTPException(422,'要求到达日期不能早于计划发运日期')
- routes=[]
- for ix,route_legs in enumerate(mode_sets):
-  origin,oc=endpoint(route_legs[0]['from']);destination,dc=endpoint(route_legs[-1]['to'])
-  multi=len(route_legs)>1;first_mode=route_legs[0]['mode']
-  order={'id':f'QUERY-PLAN-{ix+1}','origin':origin,'destination':destination,'weight':w,'cargo':str(x.get('cargo',''))[:200],'mode':'多式联运' if multi else first_mode+'运输','routeModes':','.join(l['mode'] for l in route_legs),'routeNodes':';'.join(l['to'] for l in route_legs[:-1]),'title':'联运链路查询','created':now()}
-  order.update({k:x.get(k) for k in ('loadType','plannedDeparture','requiredArrival','budget','requirements') if x.get(k) not in (None,'')})
-  if oc:order['originCoords']=oc
-  if dc:order['destinationCoords']=dc
-  route=apply_real_routes(build_route(order,'demands'))
-  route['name']=('指定联运链路' if multi else first_mode+'路线查询') if legs else first_mode+'路线查询'
-  routes.append(route)
- if x.get('compareRoad') and legs and (len(legs)>1 or legs[0]['mode']!='公路'):
-  order={**routes[0]['order'],'id':'QUERY-ROAD','routeNodes':'','routeModes':'公路','mode':'公路运输'}
-  base=apply_real_routes(build_route(order,'demands'));base['name']='全程公路参照';routes.append(base)
- return {'plans':routes,'orderTemplate':{k:v for k,v in routes[0]['order'].items() if k not in ('id','created')},'notice':'路线按已选运输方式和实际起讫地点分别查询；已配置的联运按填写的分段顺序查询，不自动推断换装节点。承运班次、运价、舱位、货运受理和通行条件须由承运方确认。'}
+ from planner_service import solve
+ from starlette.concurrency import run_in_threadpool
+ x['weight']=w
+ return await run_in_threadpool(solve,x,mode_sets)
 
 @app.get('/api/export/{kind}')
 def export(kind:str,req:Request):
